@@ -6,3 +6,12 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG GIT_ASKPASS
 ARG GIT_ACCESS_TOKEN
 COPY git-askpass /
+
+RUN conda create -n destriper python=3.9 -y
+SHELL ["conda", "run", "-n", "flatfield_estimation", "/bin/bash", "-c"]
+# RUN conda install -c conda-forge awscli
+
+RUN pip install -U --no-cache-dir \
+    numpy \
+    dask[distributed] \
+    BaSiCPy==1.1.0

@@ -89,12 +89,11 @@ def main():
     required_input_elements = [
         f"{data_folder}/metadata.json",
     ]
-    """
+
     missing_files = validate_capsule_inputs(required_input_elements)
 
     if len(missing_files):
         raise ValueError(f"We miss the following files in the capsule input: {missing_files}")
-    """
 
     metadata_json_path = data_folder.joinpath("metadata.json")
     channel_paths = list(data_folder.glob("Ex_*_Em_*"))

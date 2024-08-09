@@ -7,11 +7,17 @@ ARG GIT_ASKPASS
 ARG GIT_ACCESS_TOKEN
 COPY git-askpass /
 
-RUN conda create -n destriper python=3.9 -y
+RUN conda create -n flatfield_estimation python=3.9 -y
 SHELL ["conda", "run", "-n", "flatfield_estimation", "/bin/bash", "-c"]
 # RUN conda install -c conda-forge awscli
 
 RUN pip install -U --no-cache-dir \
     numpy \
     dask[distributed] \
-    BaSiCPy==1.1.0
+    BaSiCPy==1.1.0 \
+    jax==0.4.23 \
+    jaxlib==0.4.23 \
+    zarr \
+    matplotlib \
+    natsort \
+    PyWavelets

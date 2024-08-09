@@ -142,6 +142,10 @@ def get_col_rows_per_laser(metadata_json_path):
             f"Please check the metadata path: {metadata_json_path} and the content of the file!"
         )
 
+    # Converting to list
+    for side, tiles in laser_side.items():
+        laser_side[side] = list(tiles)
+
     return laser_side
 
 

@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 from typing import List
@@ -9,6 +10,31 @@ from natsort import natsorted
 from skimage.transform import resize
 
 from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
+
+
+def save_dict_as_json(filename: str, dictionary: dict) -> None:
+    """
+    Saves a dictionary as a json file.
+
+    Parameters
+    ------------------------
+
+    filename: str
+        Name of the json file.
+
+    dictionary: dict
+        Dictionary that will be saved as json.
+
+    verbose: Optional[bool]
+        True if you want to print the path where the file was saved.
+
+    """
+
+    if dictionary is None:
+        dictionary = {}
+
+    with open(filename, "w") as json_file:
+        json.dump(dictionary, json_file, indent=4)
 
 
 def validate_capsule_inputs(input_elements: List[str]) -> List[str]:
@@ -41,7 +67,7 @@ def validate_capsule_inputs(input_elements: List[str]) -> List[str]:
 def main():
 
     SCALE = 2
-    z_step_percentage = 0.1  # 10% of the z planes
+    z_step_percentage = 0.1  # % of the z planes
 
     cpu_count = utils.get_code_ocean_cpu_limit()
     shading_parameters = {
@@ -63,22 +89,23 @@ def main():
     required_input_elements = [
         f"{data_folder}/metadata.json",
     ]
-
+    """
     missing_files = validate_capsule_inputs(required_input_elements)
 
     if len(missing_files):
         raise ValueError(f"We miss the following files in the capsule input: {missing_files}")
+    """
 
     metadata_json_path = data_folder.joinpath("metadata.json")
-    channel_paths = list(
-        data_folder.glob(
-            "Ex_*_Em_*"
-        )
-    )
+    channel_paths = list(data_folder.glob("Ex_*_Em_*"))
 
     laser_side = utils.get_col_rows_per_laser(metadata_json_path=metadata_json_path)
 
     print("Laser sides: ", laser_side)
+
+    save_dict_as_json(
+        filename=str(results_folder.joinpath("laser_tiles.json")), dictionary=laser_side
+    )
 
     for i, channel_path in enumerate(channel_paths):
         channel_name = channel_path.stem
@@ -117,7 +144,9 @@ def main():
             )
             upsample_shape = tuple(upsample_scale * np.array(median_flatfield.shape))
 
-            print(f"Upsample shape in channel {channel_name} side {side}: {upsample_shape}")
+            print(
+                f"Upsample shape in channel {channel_name} side {side}: {upsample_shape}"
+            )
 
             upsampled_median_flatfield = resize(
                 median_flatfield,

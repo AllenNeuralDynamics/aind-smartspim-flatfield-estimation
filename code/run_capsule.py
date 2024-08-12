@@ -92,10 +92,10 @@ def main():
     ]
 
     missing_files = validate_capsule_inputs(required_input_elements)
-    """
+
     if len(missing_files):
         raise ValueError(f"We miss the following files in the capsule input: {missing_files}")
-    """
+
     metadata_folder = results_folder.joinpath('metadata')
     utils.create_folder(str(metadata_folder))
     metadata_json_path = data_folder.joinpath("metadata.json")

@@ -6,7 +6,9 @@ import dask.array as da
 import numpy as np
 import psutil
 from natsort import natsorted
-
+from typing import Optional, List
+from aind_data_schema.core.processing import (DataProcess, PipelineProcess,
+                                              Processing)
 
 def get_code_ocean_cpu_limit():
     """
@@ -195,3 +197,76 @@ def get_slicer_per_side(tiles_per_laser, channel_path, indices, scale=2):
         data_per_laser[side] = np.array(data_per_laser[side])
 
     return data_per_laser
+
+def create_folder(dest_dir, verbose: Optional[bool] = False) -> None:
+    """
+    Create new folders.
+
+    Parameters
+    ------------------------
+
+    dest_dir: PathLike
+        Path where the folder will be created if it does not exist.
+
+    verbose: Optional[bool]
+        If we want to show information about the folder status. Default False.
+
+    Raises
+    ------------------------
+
+    OSError:
+        if the folder exists.
+
+    """
+
+    if not (os.path.exists(dest_dir)):
+        try:
+            if verbose:
+                print(f"Creating new directory: {dest_dir}")
+            os.makedirs(dest_dir)
+        except OSError as e:
+            if e.errno != os.errno.EEXIST:
+                raise
+
+def generate_processing(
+    data_processes: List[DataProcess],
+    dest_processing: str,
+    processor_full_name: str,
+    pipeline_version: str,
+):
+    """
+    Generates data description for the output folder.
+
+    Parameters
+    ------------------------
+
+    data_processes: List[dict]
+        List with the processes aplied in the pipeline.
+
+    dest_processing: PathLike
+        Path where the processing file will be placed.
+
+    processor_full_name: str
+        Person in charged of running the pipeline
+        for this data asset
+
+    pipeline_version: str
+        Terastitcher pipeline version
+
+    """
+    # flake8: noqa: E501
+    processing_pipeline = PipelineProcess(
+        data_processes=data_processes,
+        processor_full_name=processor_full_name,
+        pipeline_version=pipeline_version,
+        pipeline_url="https://github.com/AllenNeuralDynamics/aind-smartspim-pipeline",
+        note="Metadata for fusion step",
+    )
+
+    processing = Processing(
+        processing_pipeline=processing_pipeline,
+        notes="This processing only contains metadata about fusion \
+            and needs to be compiled with other steps at the end",
+    )
+
+    processing.write_standard_file(output_directory=dest_processing)

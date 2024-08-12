@@ -8,9 +8,10 @@ import numpy as np
 import tifffile as tif
 from natsort import natsorted
 from skimage.transform import resize
+import time
 
 from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
-
+from aind_data_schema.core.processing import DataProcess, ProcessName
 
 def save_dict_as_json(filename: str, dictionary: dict) -> None:
     """
@@ -87,16 +88,18 @@ def main():
     # It is assumed that these files
     # will be in the data folder
     required_input_elements = [
-        f"{data_folder}/metadata.json",
+        f"{data_folder}/SmartSPIM_717381_2024-07-03_10-49-01/derivatives/metadata.json",
     ]
 
     missing_files = validate_capsule_inputs(required_input_elements)
-
+    """
     if len(missing_files):
         raise ValueError(f"We miss the following files in the capsule input: {missing_files}")
-
-    metadata_json_path = data_folder.joinpath("metadata.json")
-    channel_paths = list(data_folder.glob("Ex_*_Em_*"))
+    """
+    metadata_folder = results_folder.joinpath('metadata')
+    utils.create_folder(str(metadata_folder))
+    metadata_json_path = data_folder.joinpath("SmartSPIM_717381_2024-07-03_10-49-01/derivatives/metadata.json")
+    channel_paths = list(data_folder.glob("SmartSPIM_717381_2024-07-03_10-49-01-zarr-destriped-channels/Ex_*_Em_*"))
 
     laser_side = utils.get_col_rows_per_laser(metadata_json_path=metadata_json_path)
 
@@ -105,8 +108,10 @@ def main():
     save_dict_as_json(
         filename=str(results_folder.joinpath("laser_tiles.json")), dictionary=laser_side
     )
-
+    
+    data_processes = []
     for i, channel_path in enumerate(channel_paths):
+        start_time = time.time()
         channel_name = channel_path.stem
 
         print(f"Computing flats for channel: {channel_name}")
@@ -136,7 +141,8 @@ def main():
         )
 
         upsample_scale = SCALE * 2
-
+        
+        output_flats = []
         for side, flat_dict in flats.items():
             median_flatfield = flatfield_estimation.create_median_flatfield(
                 flat_dict["flatfield"], smooth=True
@@ -162,7 +168,38 @@ def main():
                     f"estimated_flat_laser_{channel_name}_side_{side}.tif"
                 )
             )
+            output_flats.append(flat_name)
+            
             tif.imwrite(flat_name, upsampled_median_flatfield)
+            
+        end_time = time.time()
+        
+        data_processes.append(
+            DataProcess(
+                name=ProcessName.IMAGE_FLATFIELD_CORRECTION,
+                software_version="0.0.1",
+                start_date_time=start_time,
+                end_date_time=end_time,
+                input_location=str(channel_path),
+                output_location=str(results_folder),
+                outputs={
+                    "flatfield_paths": output_flats
+                },
+                code_url="https://github.com/AllenNeuralDynamics/aind-smartspim-flatfield-estimation",
+                code_version="0.0.1",
+                parameters={
+                    "shading_parameters": shading_parameters,
+                },
+                notes=f"Flatfield estimation for channel {channel_name}, we estimate 2 flats, one per laser.",
+            )
+        )
+            
+    utils.generate_processing(
+        data_processes=data_processes,
+        dest_processing=metadata_folder,
+        processor_full_name="Camilo Laiton",
+        pipeline_version="3.0.0",
+    )
 
 
 if __name__ == "__main__":

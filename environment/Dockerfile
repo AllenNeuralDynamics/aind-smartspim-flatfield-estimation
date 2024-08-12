@@ -17,7 +17,8 @@ RUN pip install -U --no-cache-dir \
     BaSiCPy==1.1.0 \
     jax==0.4.23 \
     jaxlib==0.4.23 \
-    zarr \
+    zarr==2.18.2 \
     matplotlib \
-    natsort \
-    PyWavelets
+    natsort==8.4.0 \
+    PyWavelets==1.6.0 \
+    aind-data-schema==0.38.6

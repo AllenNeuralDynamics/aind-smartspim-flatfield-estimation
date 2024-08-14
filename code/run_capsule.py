@@ -144,9 +144,12 @@ def main():
         
         output_flats = []
         for side, flat_dict in flats.items():
-            median_flatfield = flatfield_estimation.create_median_flatfield(
+            median_flatfield = flat_dict["flatfield"]
+            """
+            flatfield_estimation.create_median_flatfield(
                 flat_dict["flatfield"], smooth=True
             )
+            """
             upsample_shape = tuple(upsample_scale * np.array(median_flatfield.shape))
 
             print(

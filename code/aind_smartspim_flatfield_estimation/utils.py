@@ -126,7 +126,7 @@ def get_col_rows_per_laser(metadata_json_path):
     if not metadata_json_path.exists():
         raise FileNotFoundError(f"{metadata_json_path} does not exists.")
 
-    laser_side = {}
+    laser_side = {"0": [], "1": [],}
     matadata_json = read_json_as_dict(metadata_json_path)
     tile_config = matadata_json.get("tile_config")
 

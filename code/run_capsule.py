@@ -64,11 +64,47 @@ def validate_capsule_inputs(input_elements: List[str]) -> List[str]:
 
     return missing_inputs
 
+def compute_unified_flatfield(fields, shading_correction_per_slide):
+    flatfields = []
+    darkfields = []
+    baselines = []
+
+    # Unifying fields with median
+    for slide_idx, fields in shading_correction_per_slide.items():
+        flatfields.append(fields["flatfield"])
+        darkfields.append(fields["darkfield"])
+        baselines.append(fields["baseline"])
+
+    mode = "median"
+    print(f"Unifying fields using {mode} mode.")
+    flatfield, darkfield, baseline = flatfield_estimation.unify_fields(
+        flatfields, darkfields, baselines, mode=mode
+    )
+    return flatfield, darkfield, baseline
+
+def get_brain_slices(dataset_path, cols, rows, slide_idx, scale=0):
+    imgs = []
+    names = []
+    n_rows = len(rows)
+    n_cols = len(cols)
+    
+    for col in cols:
+        for row in rows:
+            zarr_path = dataset_path.joinpath(f"{col}_{row}.zarr/{scale}")
+            lazy_tile = da.from_zarr(zarr_path)[0, 0, slide_idx, ...]
+            imgs.append(
+                lazy_tile.compute()
+            )
+            names.append(
+                f"{col}_{row}.zarr"
+            )
+
+    return np.array(imgs), names
 
 def main():
 
     SCALE = 2
-    z_step_percentage = 0.1  # % of the z planes
+    z_step_percentage = 0.3  # % of the z planes
 
     cpu_count = utils.get_code_ocean_cpu_limit()
     shading_parameters = {
@@ -91,15 +127,15 @@ def main():
         f"{data_folder}/metadata.json",
     ]
 
-    missing_files = validate_capsule_inputs(required_input_elements)
+#     missing_files = validate_capsule_inputs(required_input_elements)
 
-    if len(missing_files):
-        raise ValueError(f"We miss the following files in the capsule input: {missing_files}")
+#     if len(missing_files):
+#         raise ValueError(f"We miss the following files in the capsule input: {missing_files}")
 
     metadata_folder = results_folder.joinpath('metadata')
     utils.create_folder(str(metadata_folder))
-    metadata_json_path = data_folder.joinpath("metadata.json")
-    channel_paths = list(data_folder.glob("Ex_*_Em_*"))
+    metadata_json_path = data_folder.joinpath("SmartSPIM_717381_2024-07-03_10-49-01/derivatives/metadata.json")
+    channel_paths = list(data_folder.glob("SmartSPIM_717381_2024-07-03_10-49-01-zarr-destriped-channels/Ex_*_Em_*"))
 
     laser_side = utils.get_col_rows_per_laser(metadata_json_path=metadata_json_path)
 
@@ -125,53 +161,119 @@ def main():
         picked_slices, indices = utils.pick_slices(
             lazy_data, percentage=z_step_percentage, read_lazy=False
         )
+        slices = []
+        names = []
+        
+        cols = set()
+        rows = set()
+        for folder in channel_path.glob("*"):
+            if folder.suffix == ".zarr":
+                col, row = str(folder.stem).split('_')
+                cols.add(col)
+                rows.add(row)
 
-        print(f"Len indices: {len(indices)} {indices}")
-        tiles_per_side = utils.get_slicer_per_side(
-            tiles_per_laser=laser_side,
-            channel_path=channel_path,
-            indices=indices,
-            scale=SCALE,
-        )
-
-        print(f"Laser sides: {tiles_per_side.keys()}")
-
-        flats = flatfield_estimation.estimate_flats_per_laser(
-            tiles_per_side=tiles_per_side, shading_params=shading_parameters
-        )
-
+        cols = natsorted(cols)
+        rows = natsorted(rows)
+        
+        for indice in indices:
+            params = {
+                "dataset_path": channel_path,
+                "cols": cols,
+                "rows": rows,
+                "slide_idx": indice,
+                "scale": 2
+            }
+            curr_slcs, curr_nms = get_brain_slices(**params)
+            slices.append(curr_slcs)
+            names.append(curr_nms)
+        
+        shading_correction_per_slide = {}
+        for slice_idx in range(len(slices)):
+            curr_slices = slices[slice_idx]
+            shading_correction_per_slide[slice_idx] = flatfield_estimation.shading_correction(
+                slides=curr_slices, shading_parameters = shading_parameters
+            )
+        
+        flatfields = []
+        darkfields = []
+        baselines = []
         upsample_scale = SCALE * 2
         
+        # Unifying fields with median
+        for slide_idx, fields in shading_correction_per_slide.items():
+            flatfields.append(fields["flatfield"])
+            darkfields.append(fields["darkfield"])
+            baselines.append(fields["baseline"])
+        
+        flatfield, _, _ = compute_unified_flatfield(flatfields, shading_correction_per_slide)
+        print(f"Laser sides: {laser_side.keys()}")
+        
+        upsample_shape = tuple(upsample_scale * np.array(flatfield.shape))
+        upsampled_flatfield = resize(
+            flatfield,
+            upsample_shape,
+            order=4,
+            mode="reflect",
+            cval=0,
+            clip=True,
+            preserve_range=False,
+            anti_aliasing=None,
+        )
         output_flats = []
-        for side, flat_dict in flats.items():
-            #median_flatfield = flat_dict["flatfield"]
-            flatfield_estimation.create_median_flatfield(
-                flat_dict["flatfield"], smooth=True
-            )
-            upsample_shape = tuple(upsample_scale * np.array(median_flatfield.shape))
-
-            print(
-                f"Upsample shape in channel {channel_name} side {side}: {upsample_shape}"
-            )
-
-            upsampled_median_flatfield = resize(
-                median_flatfield,
-                upsample_shape,
-                order=4,
-                mode="reflect",
-                cval=0,
-                clip=True,
-                preserve_range=False,
-                anti_aliasing=None,
-            )
+        for side in laser_side.keys():
             flat_name = str(
                 results_folder.joinpath(
                     f"estimated_flat_laser_{channel_name}_side_{side}.tif"
                 )
             )
             output_flats.append(flat_name)
+
+            tif.imwrite(flat_name, upsampled_flatfield)
+
+#         print(f"Len indices: {len(indices)} {indices}")
+#         tiles_per_side = utils.get_slicer_per_side(
+#             tiles_per_laser=laser_side,
+#             channel_path=channel_path,
+#             indices=indices,
+#             scale=SCALE,
+#         )
+
+#         print(f"Laser sides: {tiles_per_side.keys()}")
+
+#         flats = flatfield_estimation.estimate_flats_per_laser(
+#             tiles_per_side=tiles_per_side, shading_params=shading_parameters
+#         )
+        
+#         output_flats = []
+#         for side, flat_dict in flats.items():
+#             #median_flatfield = flat_dict["flatfield"]
+#             flatfield_estimation.create_median_flatfield(
+#                 flat_dict["flatfield"], smooth=True
+#             )
+#             upsample_shape = tuple(upsample_scale * np.array(median_flatfield.shape))
+
+#             print(
+#                 f"Upsample shape in channel {channel_name} side {side}: {upsample_shape}"
+#             )
+
+#             upsampled_median_flatfield = resize(
+#                 median_flatfield,
+#                 upsample_shape,
+#                 order=4,
+#                 mode="reflect",
+#                 cval=0,
+#                 clip=True,
+#                 preserve_range=False,
+#                 anti_aliasing=None,
+#             )
+#             flat_name = str(
+#                 results_folder.joinpath(
+#                     f"estimated_flat_laser_{channel_name}_side_{side}.tif"
+#                 )
+#             )
+#             output_flats.append(flat_name)
             
-            tif.imwrite(flat_name, upsampled_median_flatfield)
+#             tif.imwrite(flat_name, upsampled_median_flatfield)
             
         end_time = time.time()
         
@@ -191,7 +293,7 @@ def main():
                 parameters={
                     "shading_parameters": shading_parameters,
                 },
-                notes=f"Flatfield estimation for channel {channel_name}, we estimate 2 flats, one per laser.",
+                notes=f"Flatfield estimation for channel {channel_name}",
             )
         )
             

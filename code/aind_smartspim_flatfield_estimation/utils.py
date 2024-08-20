@@ -94,30 +94,31 @@ def get_brain_slices(dataset_path, cols, rows, slide_idx, scale=0, show=False):
 def pick_slices(image_stack, percentage, read_lazy=True):
     """
     Pick slices from a 3D image stack based on a given percentage.
-
+    
     Args:
     - image_stack: 3D numpy array representing the image stack (Z, Y, X).
     - percentage: Percentage of the Z stack to pick (between 0 and 1).
-
+    
     Returns:
     - picked_slices: List of slices picked from the image stack.
     """
-    z_dim = image_stack.shape[-3]
-    #     print("Z dim: ", z_dim, image_stack.shape)
+    z_dim = image_stack.shape[-3] 
     num_slices_to_pick = int(np.floor(percentage * z_dim))
-
+    
     if num_slices_to_pick == 0:
         raise ValueError("Percentage too low to pick any slices.")
-
+    
     step_size = z_dim // num_slices_to_pick
-
-    slices = list(range(0, z_dim, step_size))
-
+    
+    start_slice = int(z_dim * 0.2)
+    end_slice = z_dim - start_slice
+    slices = list(range(start_slice, end_slice, step_size))
+    
     picked_slices = None
     if read_lazy:
         picked_slices = [image_stack[i] for i in slices]
         picked_slices = da.stack(picked_slices)
-
+    
     return picked_slices, slices
 
 
@@ -126,7 +127,7 @@ def get_col_rows_per_laser(metadata_json_path):
     if not metadata_json_path.exists():
         raise FileNotFoundError(f"{metadata_json_path} does not exists.")
 
-    laser_side = {"0": [], "1": [],}
+    laser_side = {"0": set(), "1": set()}
     matadata_json = read_json_as_dict(metadata_json_path)
     tile_config = matadata_json.get("tile_config")
 

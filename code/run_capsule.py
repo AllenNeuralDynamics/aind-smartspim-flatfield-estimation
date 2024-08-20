@@ -127,15 +127,15 @@ def main():
         f"{data_folder}/metadata.json",
     ]
 
-#     missing_files = validate_capsule_inputs(required_input_elements)
+    missing_files = validate_capsule_inputs(required_input_elements)
 
-#     if len(missing_files):
-#         raise ValueError(f"We miss the following files in the capsule input: {missing_files}")
+    if len(missing_files):
+        raise ValueError(f"We miss the following files in the capsule input: {missing_files}")
 
     metadata_folder = results_folder.joinpath('metadata')
     utils.create_folder(str(metadata_folder))
-    metadata_json_path = data_folder.joinpath("SmartSPIM_717381_2024-07-03_10-49-01/derivatives/metadata.json")
-    channel_paths = list(data_folder.glob("SmartSPIM_717381_2024-07-03_10-49-01-zarr-destriped-channels/Ex_*_Em_*"))
+    metadata_json_path = data_folder.joinpath("metadata.json")
+    channel_paths = list(data_folder.glob("Ex_*_Em_*"))
 
     laser_side = utils.get_col_rows_per_laser(metadata_json_path=metadata_json_path)
 

@@ -12,8 +12,9 @@ SHELL ["conda", "run", "-n", "flatfield_estimation", "/bin/bash", "-c"]
 # RUN conda install -c conda-forge awscli
 
 RUN pip install -U --no-cache-dir \
-    numpy \
+    aind-data-schema==1.0.0 \
     dask[distributed] \
+    numpy==1.24.2 \
     BaSiCPy==1.1.0 \
     jax==0.4.23 \
     jaxlib==0.4.23 \
@@ -21,4 +22,3 @@ RUN pip install -U --no-cache-dir \
     matplotlib \
     natsort==8.4.0 \
     PyWavelets==1.6.0 \
-    aind-data-schema==1.0.0

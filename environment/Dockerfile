@@ -21,4 +21,4 @@ RUN pip install -U --no-cache-dir \
     matplotlib \
     natsort==8.4.0 \
     PyWavelets==1.6.0 \
-    aind-data-schema==0.38.6
+    aind-data-schema==1.0.0

@@ -150,6 +150,7 @@ def estimate_flats_per_laser(tiles_per_side, shading_params):
 
     return flats
 
+
 def unify_fields(
     flatfields: List[np.array],
     darkfields: List[np.array],

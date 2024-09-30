@@ -1,14 +1,15 @@
 import json
 import os
 from pathlib import Path
+from typing import List, Optional
 
 import dask.array as da
 import numpy as np
 import psutil
-from natsort import natsorted
-from typing import Optional, List
 from aind_data_schema.core.processing import (DataProcess, PipelineProcess,
                                               Processing)
+from natsort import natsorted
+
 
 def get_code_ocean_cpu_limit():
     """
@@ -94,31 +95,31 @@ def get_brain_slices(dataset_path, cols, rows, slide_idx, scale=0, show=False):
 def pick_slices(image_stack, percentage, read_lazy=True):
     """
     Pick slices from a 3D image stack based on a given percentage.
-    
+
     Args:
     - image_stack: 3D numpy array representing the image stack (Z, Y, X).
     - percentage: Percentage of the Z stack to pick (between 0 and 1).
-    
+
     Returns:
     - picked_slices: List of slices picked from the image stack.
     """
-    z_dim = image_stack.shape[-3] 
+    z_dim = image_stack.shape[-3]
     num_slices_to_pick = int(np.floor(percentage * z_dim))
-    
+
     if num_slices_to_pick == 0:
         raise ValueError("Percentage too low to pick any slices.")
-    
+
     step_size = z_dim // num_slices_to_pick
-    
+
     start_slice = int(z_dim * 0.2)
     end_slice = z_dim - start_slice
     slices = list(range(start_slice, end_slice, step_size))
-    
+
     picked_slices = None
     if read_lazy:
         picked_slices = [image_stack[i] for i in slices]
         picked_slices = da.stack(picked_slices)
-    
+
     return picked_slices, slices
 
 
@@ -199,6 +200,7 @@ def get_slicer_per_side(tiles_per_laser, channel_path, indices, scale=2):
 
     return data_per_laser
 
+
 def create_folder(dest_dir, verbose: Optional[bool] = False) -> None:
     """
     Create new folders.
@@ -228,6 +230,7 @@ def create_folder(dest_dir, verbose: Optional[bool] = False) -> None:
         except OSError as e:
             if e.errno != os.errno.EEXIST:
                 raise
+
 
 def generate_processing(
     data_processes: List[DataProcess],

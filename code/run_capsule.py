@@ -238,51 +238,6 @@ def main():
 
             tif.imwrite(flat_name, upsampled_flatfield)
 
-        #         print(f"Len indices: {len(indices)} {indices}")
-        #         tiles_per_side = utils.get_slicer_per_side(
-        #             tiles_per_laser=laser_side,
-        #             channel_path=channel_path,
-        #             indices=indices,
-        #             scale=SCALE,
-        #         )
-
-        #         print(f"Laser sides: {tiles_per_side.keys()}")
-
-        #         flats = flatfield_estimation.estimate_flats_per_laser(
-        #             tiles_per_side=tiles_per_side, shading_params=shading_parameters
-        #         )
-
-        #         output_flats = []
-        #         for side, flat_dict in flats.items():
-        #             #median_flatfield = flat_dict["flatfield"]
-        #             flatfield_estimation.create_median_flatfield(
-        #                 flat_dict["flatfield"], smooth=True
-        #             )
-        #             upsample_shape = tuple(upsample_scale * np.array(median_flatfield.shape))
-
-        #             print(
-        #                 f"Upsample shape in channel {channel_name} side {side}: {upsample_shape}"
-        #             )
-
-        #             upsampled_median_flatfield = resize(
-        #                 median_flatfield,
-        #                 upsample_shape,
-        #                 order=4,
-        #                 mode="reflect",
-        #                 cval=0,
-        #                 clip=True,
-        #                 preserve_range=False,
-        #                 anti_aliasing=None,
-        #             )
-        #             flat_name = str(
-        #                 results_folder.joinpath(
-        #                     f"estimated_flat_laser_{channel_name}_side_{side}.tif"
-        #                 )
-        #             )
-        #             output_flats.append(flat_name)
-
-        #             tif.imwrite(flat_name, upsampled_median_flatfield)
-
         end_time = time.time()
 
         data_processes.append(

@@ -92,14 +92,18 @@ def flatfield_correction(
     darkfield = darkfield[: image_tiles.shape[-2], : image_tiles.shape[-1]]
 
     if darkfield.shape != image_tiles.shape:
-        raise ValueError(
-            f"Please, check the shape of the darkfield. Image shape: {image_tiles.shape} - Darkfield shape: {darkfield.shape}"
+        msg = (
+            "Please, check the shape of the darkfield."
+            f"Image: {image_tiles.shape} - Darkfield: {darkfield.shape}"
         )
+        raise ValueError(msg)
 
     if flatfield.shape != image_tiles.shape:
-        raise ValueError(
-            f"Please, check the shape of the flatfield. Image shape: {image_tiles.shape} - Flatfield shape: {flatfield.shape}"
+        msg = (
+            "Please, check the shape of the flatfield."
+            f"Image: {image_tiles.shape} - Flatfield: {flatfield.shape}"
         )
+        raise ValueError(msg)
 
     if baseline is None:
         baseline = np.zeros((image_tiles.shape[0],))
@@ -127,17 +131,24 @@ def flatfield_correction(
 
 def create_median_flatfield(flatfield: np.array, smooth: Optional[bool] = True):
     """
-    Generates a median-based flatfield correction image from a given input array.
-    1. Calculates the median value along each row of the input `flatfield` to create a 1D array.
-    2. Expands the median row array into a 2D image by tiling it along the column dimension.
-    3. Optionally applies Gaussian smoothing to the resulting image. The smoothing factor (`sigma`) is based on the size of the image.
+    Generates a median-based flatfield correction
+    image from a given input array.
+    1. Calculates the median value along each row
+    of the input `flatfield` to create a 1D array.
+    2. Expands the median row array into a 2D image
+    by tiling it along the column dimension.
+    3. Optionally applies Gaussian smoothing to the
+    resulting image. The smoothing factor (`sigma`) is
+    based on the size of the image.
 
     Parameters
     ----------
     flatfield: np.ndarray:
-        The input 2D array (image) for which the flatfield correction will be generated.
+        The input 2D array (image) for which the flatfield
+        correction will be generated.
     smooth Optional[bool]
-        If True, applies a Gaussian smoothing filter to the generated flatfield correction image.
+        If True, applies a Gaussian smoothing filter to the
+        generated flatfield correction image.
         default: True
 
     Returns
@@ -166,7 +177,8 @@ def estimate_flats_per_laser(tiles_per_side, shading_params):
     2. Iterates over the sides and their corresponding tiles:
         - Prints the side currently being processed.
         - Calls a `shading_correction` function (assumed to be defined
-        elsewhere) to estimate the flatfield correction for the tiles of that side.
+        elsewhere) to estimate the flatfield correction for the tiles
+        of that side.
     3. Returns the dictionary of estimated flatfield corrections.
 
     Parameters
@@ -250,7 +262,7 @@ def unify_fields(
         baseline = np.max(baselines, axis=0)
 
     else:
-        raise NotImplementedError(f"Accepted values are: ['mean', 'median', 'mip']")
+        raise NotImplementedError("Accepted values: mean, median, mip")
 
     flatfield = flatfield.astype(
         np.float16

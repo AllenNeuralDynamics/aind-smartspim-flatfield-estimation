@@ -122,9 +122,8 @@ def main():
     missing_files = validate_capsule_inputs(required_input_elements)
 
     if len(missing_files):
-        raise ValueError(
-            f"We miss the following files in the capsule input: {missing_files}"
-        )
+        msg = "We miss the following files in the" f"capsule input: {missing_files}"
+        raise ValueError(msg)
 
     data_description_path = data_folder.joinpath("data_description.json")
     data_description = {}

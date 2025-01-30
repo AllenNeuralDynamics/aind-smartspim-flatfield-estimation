@@ -68,7 +68,11 @@ def validate_capsule_inputs(input_elements: List[str]) -> List[str]:
     return missing_inputs
 
 
-def compute_unified_flatfield(fields, shading_correction_per_slide):
+def compute_unified_flatfield(fields, shading_correction_per_slide, mode="median"):
+    """
+    Gets the flatfields, darkfields and baselines to unify them
+    based on the provided mode.
+    """
     flatfields = []
     darkfields = []
     baselines = []
@@ -79,7 +83,6 @@ def compute_unified_flatfield(fields, shading_correction_per_slide):
         darkfields.append(fields["darkfield"])
         baselines.append(fields["baseline"])
 
-    mode = "median"
     print(f"Unifying fields using {mode} mode.")
     flatfield, darkfield, baseline = flatfield_estimation.unify_fields(
         flatfields, darkfields, baselines, mode=mode
@@ -87,24 +90,10 @@ def compute_unified_flatfield(fields, shading_correction_per_slide):
     return flatfield, darkfield, baseline
 
 
-def get_brain_slices(dataset_path, cols, rows, slide_idx, scale=0):
-    imgs = []
-    names = []
-    n_rows = len(rows)
-    n_cols = len(cols)
-
-    for col in cols:
-        for row in rows:
-            zarr_path = dataset_path.joinpath(f"{col}_{row}.zarr/{scale}")
-            lazy_tile = da.from_zarr(zarr_path)[0, 0, slide_idx, ...]
-            imgs.append(lazy_tile.compute())
-            names.append(f"{col}_{row}.zarr")
-
-    return np.array(imgs), names
-
-
 def main():
-
+    """
+    Main function
+    """
     SCALE = 2
     z_step_percentage = 0.3  # % of the z planes
 
@@ -127,6 +116,7 @@ def main():
     # will be in the data folder
     required_input_elements = [
         f"{data_folder}/metadata.json",
+        f"{data_folder}/data_description.json",
     ]
 
     missing_files = validate_capsule_inputs(required_input_elements)
@@ -135,6 +125,14 @@ def main():
         raise ValueError(
             f"We miss the following files in the capsule input: {missing_files}"
         )
+
+    data_description_path = data_folder.joinpath("data_description.json")
+    data_description = {}
+
+    if data_description_path.exists():
+        data_description = utils.read_json_as_dict(filepath=data_description_path)
+
+    print(f"Dataset name: {data_description.get('name')}")
 
     metadata_folder = results_folder.joinpath("metadata")
     utils.create_folder(str(metadata_folder))
@@ -187,7 +185,7 @@ def main():
                 "slide_idx": indice,
                 "scale": 2,
             }
-            curr_slcs, curr_nms = get_brain_slices(**params)
+            curr_slcs, curr_nms = utils.get_brain_slices(**params)
             slices.append(curr_slcs)
             names.append(curr_nms)
 

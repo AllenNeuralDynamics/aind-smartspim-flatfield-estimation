@@ -125,7 +125,27 @@ def flatfield_correction(
     return corrected_tiles
 
 
-def create_median_flatfield(flatfield, smooth=True):
+def create_median_flatfield(flatfield: np.array, smooth: Optional[bool] = True):
+    """
+    Generates a median-based flatfield correction image from a given input array.
+    1. Calculates the median value along each row of the input `flatfield` to create a 1D array.
+    2. Expands the median row array into a 2D image by tiling it along the column dimension.
+    3. Optionally applies Gaussian smoothing to the resulting image. The smoothing factor (`sigma`) is based on the size of the image.
+
+    Parameters
+    ----------
+    flatfield: np.ndarray:
+        The input 2D array (image) for which the flatfield correction will be generated.
+    smooth Optional[bool]
+        If True, applies a Gaussian smoothing filter to the generated flatfield correction image.
+        default: True
+
+    Returns
+    -------
+    np.ndarray:
+        A 2D array representing the flatfield correction image.
+
+    """
     median_row = np.median(flatfield, axis=1)
     median_image = np.tile(median_row[:, np.newaxis], (1, flatfield.shape[1]))
 
@@ -137,6 +157,34 @@ def create_median_flatfield(flatfield, smooth=True):
 
 
 def estimate_flats_per_laser(tiles_per_side, shading_params):
+    """
+    Estimates flatfield correction images for multiple laser
+    configurations, based on input tiles for each side.
+
+    1. Initializes a dictionary with the same keys as `tiles_per_side`,
+    assigning `None` as the initial value for each key.
+    2. Iterates over the sides and their corresponding tiles:
+        - Prints the side currently being processed.
+        - Calls a `shading_correction` function (assumed to be defined
+        elsewhere) to estimate the flatfield correction for the tiles of that side.
+    3. Returns the dictionary of estimated flatfield corrections.
+
+    Parameters
+    ----------
+    tiles_per_side: dict
+        A dictionary where keys represent sides (e.g., "left", "right")
+        and values are lists of tiles (image slices) for flatfield estimation.
+    shading_params: dict
+        A dictionary containing parameters for the shading correction process.
+
+    Returns
+    -------
+    dict:
+        A dictionary where keys correspond to sides (same as `tiles_per_side`)
+        and values are the estimated flatfield correction images.
+
+    """
+
     flats = {key: None for key in tiles_per_side.keys()}
     for side, tiles in tiles_per_side.items():
 

@@ -9,8 +9,6 @@ import pywt
 from scipy import fftpack
 from skimage import filters
 
-from ._types import PathLike
-
 
 def sigmoid(data: np.array):
     """

@@ -9,8 +9,6 @@ import pywt
 from scipy import fftpack
 from skimage import filters
 
-from ._types import PathLike
-
 
 def sigmoid(data: np.array):
     """
@@ -181,9 +179,6 @@ def log_space_fft_filtering(
 
     width_fraction = sigma / input_image.shape[0]
 
-    # print(f"Parameters: Wavelet {wavelet} coeffs: {coeffs} levels: {nb_levels}")
-    # print(f"max threshold value: {max_threshold} sigma {sigma} width fraction {width_fraction}")
-
     coeff_filtered = [approx]
     for i, (ch, cv, cd) in enumerate(detail):
         ch_sq = ch**2
@@ -193,9 +188,6 @@ def log_space_fft_filtering(
             filters.threshold_otsu(ch_sq)
         )  # threshold_otsu(ch_sq)
         threshold = min(max_threshold, otsu_threshold_sqrt)
-
-        # print(f"Otsu threshold: {otsu_threshold_sqrt} - provided threshold {max_threshold}")
-        # print(f"Selected threshold: {threshold}")
 
         mask = ch_power > threshold
         foreground = ch * mask
@@ -365,14 +357,18 @@ def flatfield_correction(
     darkfield = darkfield[: image_tiles.shape[-2], : image_tiles.shape[-1]]
 
     if darkfield.shape != image_tiles.shape:
-        raise ValueError(
-            f"Please, check the shape of the darkfield. Image shape: {image_tiles.shape} - Darkfield shape: {darkfield.shape}"
+        msg = (
+            "Please, check the shape of the darkfield."
+            f"Image: {image_tiles.shape} - Darkfield: {darkfield.shape}"
         )
+        raise ValueError(msg)
 
     if flatfield.shape != image_tiles.shape:
-        raise ValueError(
-            f"Please, check the shape of the flatfield. Image shape: {image_tiles.shape} - Flatfield shape: {flatfield.shape}"
+        msg = (
+            "Please, check the shape of the flatfield."
+            f"Image: {image_tiles.shape} - Flatfield: {flatfield.shape}"
         )
+        raise ValueError(msg)
 
     if baseline is None:
         baseline = np.zeros((image_tiles.shape[0],))
@@ -440,7 +436,7 @@ def filter_stripes(
         Filtered image data
     """
 
-    fore_mean, back_mean, cell_foreground_image = get_foreground_background_mean(image)
+    fore_mean, back_mean, _ = get_foreground_background_mean(image)
     filtered_image = None
 
     if fore_mean > back_mean and fore_mean > microscope_high_int:

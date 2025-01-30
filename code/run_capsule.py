@@ -8,10 +8,12 @@ import dask.array as da
 import numpy as np
 import tifffile as tif
 from aind_data_schema.core.processing import DataProcess, ProcessName
+from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
+from aind_smartspim_flatfield_estimation.__init__ import (__maintainers__,
+                                                          __pipeline_version__,
+                                                          __url__, __version__)
 from natsort import natsorted
 from skimage.transform import resize
-
-from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
 
 
 def save_dict_as_json(filename: str, dictionary: dict) -> None:
@@ -66,7 +68,11 @@ def validate_capsule_inputs(input_elements: List[str]) -> List[str]:
     return missing_inputs
 
 
-def compute_unified_flatfield(fields, shading_correction_per_slide):
+def compute_unified_flatfield(fields, shading_correction_per_slide, mode="median"):
+    """
+    Gets the flatfields, darkfields and baselines to unify them
+    based on the provided mode.
+    """
     flatfields = []
     darkfields = []
     baselines = []
@@ -77,7 +83,6 @@ def compute_unified_flatfield(fields, shading_correction_per_slide):
         darkfields.append(fields["darkfield"])
         baselines.append(fields["baseline"])
 
-    mode = "median"
     print(f"Unifying fields using {mode} mode.")
     flatfield, darkfield, baseline = flatfield_estimation.unify_fields(
         flatfields, darkfields, baselines, mode=mode
@@ -85,24 +90,10 @@ def compute_unified_flatfield(fields, shading_correction_per_slide):
     return flatfield, darkfield, baseline
 
 
-def get_brain_slices(dataset_path, cols, rows, slide_idx, scale=0):
-    imgs = []
-    names = []
-    n_rows = len(rows)
-    n_cols = len(cols)
-
-    for col in cols:
-        for row in rows:
-            zarr_path = dataset_path.joinpath(f"{col}_{row}.zarr/{scale}")
-            lazy_tile = da.from_zarr(zarr_path)[0, 0, slide_idx, ...]
-            imgs.append(lazy_tile.compute())
-            names.append(f"{col}_{row}.zarr")
-
-    return np.array(imgs), names
-
-
 def main():
-
+    """
+    Main function
+    """
     SCALE = 2
     z_step_percentage = 0.3  # % of the z planes
 
@@ -119,20 +110,28 @@ def main():
 
     data_folder = Path(os.path.abspath("../data"))
     results_folder = Path(os.path.abspath("../results"))
-    scratch_folder = Path(os.path.abspath("../scratch"))
+    # scratch_folder = Path(os.path.abspath("../scratch"))
 
     # It is assumed that these files
     # will be in the data folder
     required_input_elements = [
         f"{data_folder}/metadata.json",
+        f"{data_folder}/data_description.json",
     ]
 
     missing_files = validate_capsule_inputs(required_input_elements)
 
     if len(missing_files):
-        raise ValueError(
-            f"We miss the following files in the capsule input: {missing_files}"
-        )
+        msg = "We miss the following files in the" f"capsule input: {missing_files}"
+        raise ValueError(msg)
+
+    data_description_path = data_folder.joinpath("data_description.json")
+    data_description = {}
+
+    if data_description_path.exists():
+        data_description = utils.read_json_as_dict(filepath=data_description_path)
+
+    print(f"Dataset name: {data_description.get('name')}")
 
     metadata_folder = results_folder.joinpath("metadata")
     utils.create_folder(str(metadata_folder))
@@ -185,7 +184,7 @@ def main():
                 "slide_idx": indice,
                 "scale": 2,
             }
-            curr_slcs, curr_nms = get_brain_slices(**params)
+            curr_slcs, curr_nms = utils.get_brain_slices(**params)
             slices.append(curr_slcs)
             names.append(curr_nms)
 
@@ -236,64 +235,19 @@ def main():
 
             tif.imwrite(flat_name, upsampled_flatfield)
 
-        #         print(f"Len indices: {len(indices)} {indices}")
-        #         tiles_per_side = utils.get_slicer_per_side(
-        #             tiles_per_laser=laser_side,
-        #             channel_path=channel_path,
-        #             indices=indices,
-        #             scale=SCALE,
-        #         )
-
-        #         print(f"Laser sides: {tiles_per_side.keys()}")
-
-        #         flats = flatfield_estimation.estimate_flats_per_laser(
-        #             tiles_per_side=tiles_per_side, shading_params=shading_parameters
-        #         )
-
-        #         output_flats = []
-        #         for side, flat_dict in flats.items():
-        #             #median_flatfield = flat_dict["flatfield"]
-        #             flatfield_estimation.create_median_flatfield(
-        #                 flat_dict["flatfield"], smooth=True
-        #             )
-        #             upsample_shape = tuple(upsample_scale * np.array(median_flatfield.shape))
-
-        #             print(
-        #                 f"Upsample shape in channel {channel_name} side {side}: {upsample_shape}"
-        #             )
-
-        #             upsampled_median_flatfield = resize(
-        #                 median_flatfield,
-        #                 upsample_shape,
-        #                 order=4,
-        #                 mode="reflect",
-        #                 cval=0,
-        #                 clip=True,
-        #                 preserve_range=False,
-        #                 anti_aliasing=None,
-        #             )
-        #             flat_name = str(
-        #                 results_folder.joinpath(
-        #                     f"estimated_flat_laser_{channel_name}_side_{side}.tif"
-        #                 )
-        #             )
-        #             output_flats.append(flat_name)
-
-        #             tif.imwrite(flat_name, upsampled_median_flatfield)
-
         end_time = time.time()
 
         data_processes.append(
             DataProcess(
                 name=ProcessName.IMAGE_FLAT_FIELD_CORRECTION,
-                software_version="0.0.1",
+                software_version=__version__,
                 start_date_time=start_time,
                 end_date_time=end_time,
                 input_location=str(channel_path),
                 output_location=str(results_folder),
                 outputs={"flatfield_paths": output_flats},
-                code_url="https://github.com/AllenNeuralDynamics/aind-smartspim-flatfield-estimation",
-                code_version="0.0.1",
+                code_url=__url__,
+                code_version=__version__,
                 parameters={
                     "shading_parameters": shading_parameters,
                 },
@@ -304,8 +258,8 @@ def main():
     utils.generate_processing(
         data_processes=data_processes,
         dest_processing=metadata_folder,
-        processor_full_name="Camilo Laiton",
-        pipeline_version="3.0.0",
+        processor_full_name=__maintainers__[0],
+        pipeline_version=__pipeline_version__,
     )
 
 

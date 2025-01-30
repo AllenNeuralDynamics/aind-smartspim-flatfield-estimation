@@ -1,7 +1,11 @@
+"""
+Utilities module
+"""
+
 import json
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import dask.array as da
 import numpy as np
@@ -65,43 +69,33 @@ def read_json_as_dict(filepath: str) -> dict:
                 data_str = data.decode("utf-8", errors="ignore")
                 dictionary = json.loads(data_str)
 
-    #             print(f"Reading {filepath} forced: {dictionary}")
-
     return dictionary
 
 
-def get_brain_slices(dataset_path, cols, rows, slide_idx, scale=0, show=False):
-    imgs = []
-    names = []
-    n_rows = len(rows)
-    n_cols = len(cols)
-
-    dataset_path = Path(dataset_path)
-
-    for col in cols:
-        for row in rows:
-            zarr_path = dataset_path.joinpath(f"{col}_{row}.zarr/{scale}")
-            lazy_tile = da.from_zarr(zarr_path)[0, 0, slide_idx, ...]
-
-            imgs.append(lazy_tile.compute())
-            names.append(f"{col}_{row}.zarr")
-
-    if show:
-        show_grid(imgs, names, n_rows, n_cols, slide_idx, True)
-
-    return np.array(imgs), names
-
-
-def pick_slices(image_stack, percentage, read_lazy=True):
+def pick_slices(
+    image_stack: np.array, percentage: float, read_lazy: Optional[bool] = True
+):
     """
     Pick slices from a 3D image stack based on a given percentage.
 
-    Args:
-    - image_stack: 3D numpy array representing the image stack (Z, Y, X).
-    - percentage: Percentage of the Z stack to pick (between 0 and 1).
+    Parameters
+    ----------
+    image_stack: np.array
+        3D numpy array representing the image stack (Z, Y, X).
 
-    Returns:
-    - picked_slices: List of slices picked from the image stack.
+    percentage: float
+        Percentage of the Z stack to pick (between 0 and 1).
+
+    read_lazy: Optional[bool]
+        Boolean to indicate if we want to read the data as
+        a lazy array or pull it into memory
+
+    Returns
+    -------
+    List:
+        List of slices picked from the image stack.
+    List:
+        List of the indices of the slices
     """
     z_dim = image_stack.shape[-3]
     num_slices_to_pick = int(np.floor(percentage * z_dim))
@@ -123,7 +117,35 @@ def pick_slices(image_stack, percentage, read_lazy=True):
     return picked_slices, slices
 
 
-def get_col_rows_per_laser(metadata_json_path):
+def get_col_rows_per_laser(metadata_json_path: str):
+    """
+    Extracts column and row identifiers for each laser side from a metadata JSON file.
+
+    1. Checks if the metadata file exists; raises an error if not.
+    2. Reads the metadata JSON file and retrieves tile configuration data.
+    3. Extracts and groups the column and row identifiers (`X_Y`) by laser side ("0" or "1").
+    4. Converts the sets of identifiers into lists before returning.
+
+    Parameters
+    ----------
+    metadata_json_path: str
+        Path to the metadata JSON file.
+
+    Returns
+    -------
+    dict:
+        A dictionary with keys "0" and "1" (representing laser sides),
+        where each key maps to a list of strings
+        in the format "X_Y" representing column and row coordinates.
+
+    Raises
+    ------
+    FileNotFoundError:
+        If the specified metadata JSON file does not exist.
+    ValueError:
+        If the file does not contain valid tile configuration data.
+
+    """
 
     if not metadata_json_path.exists():
         raise FileNotFoundError(f"{metadata_json_path} does not exists.")
@@ -153,7 +175,99 @@ def get_col_rows_per_laser(metadata_json_path):
     return laser_side
 
 
-def get_slicer_per_side(tiles_per_laser, channel_path, indices, scale=2):
+def get_brain_slices(
+    dataset_path: str,
+    cols: List[int],
+    rows: List[int],
+    slide_idx: int,
+    scale: Optional[int] = 0,
+):
+    """
+    Gets the brain slices that will be used in the estimation of
+    the flatfields.
+
+    Parameters
+    ----------
+    dataset_path: str
+        Dataset path where the tiles are located.
+
+    cols: List[str]
+        List of columns in the dataset
+
+    rows: List[str]
+        List of rows in the dataset
+
+    slide_idx: int
+        Index of the slice of the brain that is
+        being used for the flat estimation.
+
+    scale: Optional[int]
+        Multiscale that will be used in the flat
+        estimation. Default: 0
+
+    Returns
+    -------
+    np.array
+        Array with the slices
+
+    List[str]
+        List with the names of the tiles.
+        A combination of row and cols.
+    """
+    imgs = []
+    names = []
+
+    for col in cols:
+        for row in rows:
+            zarr_path = dataset_path.joinpath(f"{col}_{row}.zarr/{scale}")
+            lazy_tile = da.from_zarr(zarr_path)[0, 0, slide_idx, ...]
+            imgs.append(lazy_tile.compute())
+            names.append(f"{col}_{row}.zarr")
+
+    return np.array(imgs), names
+
+
+def get_slicer_per_side(
+    tiles_per_laser: Dict,
+    channel_path: str,
+    indices: List[int],
+    scale: Optional[int] = 2,
+):
+    """
+    Groups 3D image slices per laser side based on tiles and metadata.
+
+    1. Reads the directory of Zarr datasets and extracts unique column and row identifiers.
+    2. Sorts the columns and rows using natural sorting.
+    3. Iterates over the specified slide indices to generate slices and names using the `get_brain_slices` function.
+    4. Matches the slices to their respective laser sides ("0" or "1") based on tile identifiers.
+    5. Converts the collected slices for each laser side into NumPy arrays and returns them.
+
+    Parameters
+    ----------
+    tiles_per_laser: dict:
+        A dictionary where keys are laser sides ("0", "1")
+        and values are lists of tile identifiers (e.g., "X_Y").
+    channel_path: str
+        Path to the directory containing Zarr datasets.
+    indices: List[int]:
+        List of slide indices to process.
+    scale: int
+        Scale factor to use for processing slices.
+        Default: 2
+
+    Returns
+    -------
+    dict
+        A dictionary with keys "0" and "1", where each key maps to
+        a 3D NumPy array containing the processed image slices for
+        the corresponding laser side.
+
+    Raises
+    ------
+    ValueError:
+        If a stack (tile) in the channel data is not found in the metadata.
+
+    """
 
     channel_path = Path(channel_path)
     data_per_laser = {k: [] for k in tiles_per_laser.keys()}

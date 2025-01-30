@@ -8,10 +8,12 @@ import dask.array as da
 import numpy as np
 import tifffile as tif
 from aind_data_schema.core.processing import DataProcess, ProcessName
+from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
+from aind_smartspim_flatfield_estimation.__init__ import (__maintainers__,
+                                                          __pipeline_version__,
+                                                          __url__, __version__)
 from natsort import natsorted
 from skimage.transform import resize
-
-from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
 
 
 def save_dict_as_json(filename: str, dictionary: dict) -> None:
@@ -119,7 +121,7 @@ def main():
 
     data_folder = Path(os.path.abspath("../data"))
     results_folder = Path(os.path.abspath("../results"))
-    scratch_folder = Path(os.path.abspath("../scratch"))
+    # scratch_folder = Path(os.path.abspath("../scratch"))
 
     # It is assumed that these files
     # will be in the data folder
@@ -286,14 +288,14 @@ def main():
         data_processes.append(
             DataProcess(
                 name=ProcessName.IMAGE_FLAT_FIELD_CORRECTION,
-                software_version="0.0.1",
+                software_version=__version__,
                 start_date_time=start_time,
                 end_date_time=end_time,
                 input_location=str(channel_path),
                 output_location=str(results_folder),
                 outputs={"flatfield_paths": output_flats},
-                code_url="https://github.com/AllenNeuralDynamics/aind-smartspim-flatfield-estimation",
-                code_version="0.0.1",
+                code_url=__url__,
+                code_version=__version__,
                 parameters={
                     "shading_parameters": shading_parameters,
                 },
@@ -304,8 +306,8 @@ def main():
     utils.generate_processing(
         data_processes=data_processes,
         dest_processing=metadata_folder,
-        processor_full_name="Camilo Laiton",
-        pipeline_version="3.0.0",
+        processor_full_name=__maintainers__[0],
+        pipeline_version=__pipeline_version__,
     )
 
 

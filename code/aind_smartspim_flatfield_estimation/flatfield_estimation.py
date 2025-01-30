@@ -8,9 +8,6 @@ from typing import List, Optional
 import numpy as np
 from basicpy import BaSiC
 from scipy.ndimage import gaussian_filter
-from skimage.io import imread
-
-from .filtering import filter_stripes
 
 
 def shading_correction(

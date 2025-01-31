@@ -1,3 +1,7 @@
+"""
+Run file for flatfield estimation
+"""
+
 import json
 import os
 import time
@@ -8,12 +12,13 @@ import dask.array as da
 import numpy as np
 import tifffile as tif
 from aind_data_schema.core.processing import DataProcess, ProcessName
+from natsort import natsorted
+from skimage.transform import resize
+
 from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
 from aind_smartspim_flatfield_estimation.__init__ import (__maintainers__,
                                                           __pipeline_version__,
                                                           __url__, __version__)
-from natsort import natsorted
-from skimage.transform import resize
 
 
 def save_dict_as_json(filename: str, dictionary: dict) -> None:

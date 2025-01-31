@@ -1,9 +1,6 @@
 """Tests for the smartspim filtering"""
 
-import os
-import shutil
 import sys
-import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -16,11 +13,6 @@ from aind_smartspim_flatfield_estimation import filtering
 
 class SmartspimFiltering(unittest.TestCase):
     """Class for testing smartspim filtering"""
-
-    @classmethod
-    def setUpClass(cls):
-        """Setup basic setting accross tests"""
-        cls.temp_folder = tempfile.mkdtemp(prefix="unittest_")
 
     def test_sigmoid(self):
         """Test the sigmoid function"""
@@ -296,9 +288,3 @@ class SmartspimFiltering(unittest.TestCase):
             shadow_correction=shadow_correction,
         )
         self.assertIsNotNone(filtered_image, "Shadow correction not applied correctly")
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        """Tear down class method to clean up"""
-        if os.path.exists(cls.temp_folder):
-            shutil.rmtree(cls.temp_folder, ignore_errors=True)

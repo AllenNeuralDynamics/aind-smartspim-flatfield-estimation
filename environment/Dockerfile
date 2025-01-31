@@ -21,4 +21,4 @@ RUN pip install -U --no-cache-dir \
     zarr==2.18.2 \
     matplotlib \
     natsort==8.4.0 \
-    PyWavelets==1.6.0 \
+    PyWavelets==1.6.0

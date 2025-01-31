@@ -15,5 +15,5 @@ __url__ = "https://github.com/AllenNeuralDynamics/aind-smartspim-flatfield-estim
 __maintainers__ = ["Camilo Laiton"]
 __maintainer_emails__ = ["camilo.laiton@alleninstitute.org"]
 __title__ = "aind-smartspim-flatfield-estimation"
-__status__ = "Development"  # 'Production', 'Beta'
+__status__ = "Production"  # 'Production', 'Beta'
 __pipeline_version__ = "3.0.0"

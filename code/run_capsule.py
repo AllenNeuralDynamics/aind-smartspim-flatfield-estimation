@@ -1,3 +1,7 @@
+"""
+Run file for flatfield estimation
+"""
+
 import json
 import os
 import time

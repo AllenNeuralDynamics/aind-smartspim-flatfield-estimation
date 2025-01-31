@@ -153,6 +153,7 @@ def get_col_rows_per_laser(metadata_json_path: str):
         If the file does not contain valid tile configuration data.
 
     """
+    metadata_json_path = Path(metadata_json_path)
 
     if not metadata_json_path.exists():
         raise FileNotFoundError(f"{metadata_json_path} does not exists.")

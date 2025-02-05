@@ -1,0 +1,19 @@
+FROM continuumio/miniconda3:23.9.0-0
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update
+RUN conda create -n flatfield_estimation python=3.9 -y && conda clean -afy
+SHELL ["conda", "run", "-n", "flatfield_estimation", "/bin/bash", "-c"]
+
+RUN pip install -U --no-cache-dir \
+    aind-data-schema==1.0.0 \
+    dask[distributed] \
+    numpy==1.24.2 \
+    BaSiCPy==1.1.0 \
+    jax==0.4.23 \
+    jaxlib==0.4.23 \
+    zarr==2.18.2 \
+    matplotlib \
+    natsort==8.4.0 \
+    PyWavelets==1.6.0

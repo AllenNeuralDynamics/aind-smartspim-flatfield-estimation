@@ -1,8 +1,27 @@
 FROM continuumio/miniconda3:23.9.0-0
 
+# --------------------- #
+#      METADATA         #
+# --------------------- #
+LABEL maintainer="Camilo Laiton <camilo.laiton@alleninstitute.org>" \
+    org.opencontainers.image.title="Flatfield Estimation" \
+    org.opencontainers.image.description="Container for flatfield estimation using BaSiCPy and related tools." \
+    org.opencontainers.image.version="0.0.1" \
+    org.opencontainers.image.licenses="MIT"
+    
 ARG DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update
+    
+# --------------------- #
+#  SYSTEM DEPENDENCIES  #
+# --------------------- #
+RUN apt-get update && \
+    apt-get install -y gcc && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+    
+# --------------------- #
+#    CONDA ENV SETUP    #
+# --------------------- #
 RUN conda create -n flatfield_estimation python=3.9 -y && conda clean -afy
 SHELL ["conda", "run", "-n", "flatfield_estimation", "/bin/bash", "-c"]
 

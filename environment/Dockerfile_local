@@ -1,38 +1,46 @@
+# ----------- Builder Stage ----------- #
+FROM continuumio/miniconda3:23.9.0-0 as builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y gcc && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create conda environment and install dependencies
+RUN conda create -y -n flatfield_estimation python=3.9 && \
+    /opt/conda/envs/flatfield_estimation/bin/pip install --no-cache-dir \
+        aind-data-schema==1.0.0 \
+        dask[distributed] \
+        numpy==1.24.2 \
+        BaSiCPy==1.1.0 \
+        jax==0.4.23 \
+        jaxlib==0.4.23 \
+        zarr==2.18.2 \
+        matplotlib \
+        natsort==8.4.0 \
+        PyWavelets==1.6.0 && \
+    conda clean --all --yes
+
+# ----------- runtime Stage ----------- #
 FROM continuumio/miniconda3:23.9.0-0
 
-# --------------------- #
-#      METADATA         #
-# --------------------- #
 LABEL maintainer="Camilo Laiton <camilo.laiton@alleninstitute.org>" \
     org.opencontainers.image.title="Flatfield Estimation" \
     org.opencontainers.image.description="Container for flatfield estimation using BaSiCPy and related tools." \
     org.opencontainers.image.version="0.0.1" \
     org.opencontainers.image.licenses="MIT"
-    
+
 ARG DEBIAN_FRONTEND=noninteractive
-    
-# --------------------- #
-#  SYSTEM DEPENDENCIES  #
-# --------------------- #
+
+# System dependencies
 RUN apt-get update && \
     apt-get install -y gcc && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-    
-# --------------------- #
-#    CONDA ENV SETUP    #
-# --------------------- #
-RUN conda create -n flatfield_estimation python=3.9 -y && conda clean -afy
-SHELL ["conda", "run", "-n", "flatfield_estimation", "/bin/bash", "-c"]
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN pip install -U --no-cache-dir \
-    aind-data-schema==1.0.0 \
-    dask[distributed] \
-    numpy==1.24.2 \
-    BaSiCPy==1.1.0 \
-    jax==0.4.23 \
-    jaxlib==0.4.23 \
-    zarr==2.18.2 \
-    matplotlib \
-    natsort==8.4.0 \
-    PyWavelets==1.6.0
+# Copy only the prepared environment
+COPY --from=builder /opt/conda/envs/flatfield_estimation /opt/conda/envs/flatfield_estimation
+
+# Set environment path
+ENV PATH="/opt/conda/envs/flatfield_estimation/bin:$PATH"

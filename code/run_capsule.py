@@ -157,9 +157,6 @@ def main():
             "Expected files matching 'preprocess_*.json' or 'Ex_*_Em_*'."
         )
 
-    if channel_name is None:
-        raise ValueError("Channel name not found in the configuration file")
-
     laser_side = utils.get_col_rows_per_laser(metadata_json_path=metadata_json_path)
 
     print("Laser sides: ", laser_side)

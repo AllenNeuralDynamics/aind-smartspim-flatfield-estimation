@@ -22,4 +22,5 @@ RUN pip install -U --no-cache-dir \
     matplotlib \
     natsort==8.4.0 \
     PyWavelets==1.6.0 \
-    boto3
+    boto3 \
+    s3fs

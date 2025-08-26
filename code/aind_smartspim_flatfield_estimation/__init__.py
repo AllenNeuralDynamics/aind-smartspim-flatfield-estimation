@@ -2,7 +2,7 @@
 Module init file
 """
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 __authors__ = ["Camilo Laiton"]
 __author_emails__ = ["camilo.laiton@alleninstitute.org"]
 __license__ = "MIT"
@@ -16,4 +16,4 @@ __maintainers__ = ["Camilo Laiton"]
 __maintainer_emails__ = ["camilo.laiton@alleninstitute.org"]
 __title__ = "aind-smartspim-flatfield-estimation"
 __status__ = "Production"  # 'Production', 'Beta'
-__pipeline_version__ = "3.0.0"
+__pipeline_version__ = "4.0.0"

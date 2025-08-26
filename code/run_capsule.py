@@ -144,11 +144,17 @@ def main():
 
     # Dispatcher generates preprocess_{channel_name}.json files
     # These are split to instantiate a single machine per channel
+    # Find channel configuration files using multiple patterns
     channel_config_paths = list(data_folder.glob("preprocess_*.json"))
 
-    if not len(channel_config_paths):
+    if not channel_config_paths:
+        print("No preprocess_*.json configs found, searching for Ex_*_Em_* configs...")
+        channel_config_paths = list(data_folder.glob("Ex_*_Em_*"))
+
+    if not channel_config_paths:
         raise FileNotFoundError(
-            f"No channel configuration files found in {data_folder}"
+            f"No channel configuration files found in {data_folder}. "
+            "Expected files matching 'preprocess_*.json' or 'Ex_*_Em_*'."
         )
 
     if channel_name is None:
@@ -164,12 +170,18 @@ def main():
 
     data_processes = []
     for i, channel_config_path in enumerate(channel_config_paths):
-        # We pick the first one
-        channel_config = utils.read_json_as_dict(filepath=channel_config_path)
-        origin_path = channel_config.get("input_data")
-        channel_name = channel_config.get("channel")
 
-        channel_path = f"{origin_path}/{channel_name}"
+        channel_path = channel_config_path
+        channel_name = channel_path.stem
+
+        # If s3 path provided, read from there
+        if Path(channel_config_path).suffix == ".json":
+            channel_config = utils.read_json_as_dict(filepath=channel_config_path)
+            origin_path = channel_config.get("input_data")
+            channel_name = channel_config.get("channel")
+
+            channel_path = f"{origin_path}/{channel_name}"
+
         start_time = time.time()
 
         print(f"Computing flats for channel: {channel_name}")

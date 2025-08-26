@@ -229,7 +229,7 @@ def get_brain_slices(
 
     for col in cols:
         for row in rows:
-            zarr_path = dataset_path.joinpath(f"{col}_{row}.zarr/{scale}")
+            zarr_path = f"{dataset_path}/{col}_{row}.zarr/{scale}"
             lazy_tile = da.squeeze(da.from_zarr(zarr_path))[slide_idx, ...]
             imgs.append(lazy_tile.compute())
             names.append(f"{col}_{row}.zarr")

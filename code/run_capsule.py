@@ -12,13 +12,12 @@ import dask.array as da
 import numpy as np
 import tifffile as tif
 from aind_data_schema.core.processing import DataProcess, ProcessName
-from natsort import natsorted
-from skimage.transform import resize
-
 from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
 from aind_smartspim_flatfield_estimation.__init__ import (__maintainers__,
                                                           __pipeline_version__,
                                                           __url__, __version__)
+from natsort import natsorted
+from skimage.transform import resize
 
 
 def save_dict_as_json(filename: str, dictionary: dict) -> None:
@@ -136,12 +135,24 @@ def main():
     if data_description_path.exists():
         data_description = utils.read_json_as_dict(filepath=data_description_path)
 
-    print(f"Dataset name: {data_description.get('name')}")
+    dataset_name = data_description.get("name")
+    print(f"Dataset name: {dataset_name}")
 
     metadata_folder = results_folder.joinpath("metadata")
     utils.create_folder(str(metadata_folder))
     metadata_json_path = data_folder.joinpath("metadata.json")
-    channel_paths = list(data_folder.glob("Ex_*_Em_*"))
+
+    # Dispatcher generates preprocess_{channel_name}.json files
+    # These are split to instantiate a single machine per channel
+    channel_config_paths = list(data_folder.glob("preprocess_*.json"))
+
+    if not len(channel_config_paths):
+        raise FileNotFoundError(
+            f"No channel configuration files found in {data_folder}"
+        )
+
+    if channel_name is None:
+        raise ValueError("Channel name not found in the configuration file")
 
     laser_side = utils.get_col_rows_per_laser(metadata_json_path=metadata_json_path)
 
@@ -152,17 +163,33 @@ def main():
     )
 
     data_processes = []
-    for i, channel_path in enumerate(channel_paths):
+    for i, channel_config_path in enumerate(channel_config_paths):
+        # We pick the first one
+        channel_config = utils.read_json_as_dict(filepath=channel_config_path)
+        origin_path = channel_config.get("input_data")
+        channel_name = channel_config.get("channel")
+
+        channel_path = f"{origin_path}/{channel_name}"
         start_time = time.time()
-        channel_name = channel_path.stem
 
         print(f"Computing flats for channel: {channel_name}")
-        if not channel_path.exists():
-            raise FileNotFoundError(f"Path {channel_path} does not exist!")
 
         # Lazy reading just to check the shape
-        check_zarr = list(channel_path.glob("*.zarr"))[0].joinpath(str(SCALE))
-        lazy_data = da.from_zarr(check_zarr)
+        tile_paths = []
+
+        # Reading from S3 if provided the path
+        if utils.is_s3_path(str(channel_path)):
+            bucket_name, prefix = utils.split_s3_path(str(channel_path))
+            tile_paths = utils.list_s3_folders(
+                bucket=bucket_name, prefix=prefix, extension=".zarr"
+            )
+            tile_paths = [f"{channel_path}/{tile_path}" for tile_path in tile_paths]
+        else:
+            channel_path = Path(channel_path)
+            tile_paths = list(channel_path.glob("*.zarr"))
+
+        check_zarr = f"{tile_paths[0]}/{SCALE}"
+        lazy_data = da.squeeze(da.from_zarr(check_zarr))
 
         picked_slices, indices = utils.pick_slices(
             lazy_data, percentage=z_step_percentage, read_lazy=False
@@ -172,9 +199,10 @@ def main():
 
         cols = set()
         rows = set()
-        for folder in channel_path.glob("*"):
-            if folder.suffix == ".zarr":
-                col, row = str(folder.stem).split("_")
+        for folder in tile_paths:
+            folder_parsed = Path(folder)
+            if folder_parsed.suffix == ".zarr":
+                col, row = str(folder_parsed.stem).split("_")
                 cols.add(col)
                 rows.add(row)
 

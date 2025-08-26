@@ -6,7 +6,9 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
+import boto3
 import dask.array as da
 import numpy as np
 import psutil
@@ -228,7 +230,7 @@ def get_brain_slices(
     for col in cols:
         for row in rows:
             zarr_path = dataset_path.joinpath(f"{col}_{row}.zarr/{scale}")
-            lazy_tile = da.from_zarr(zarr_path)[0, 0, slide_idx, ...]
+            lazy_tile = da.squeeze(da.from_zarr(zarr_path))[slide_idx, ...]
             imgs.append(lazy_tile.compute())
             names.append(f"{col}_{row}.zarr")
 
@@ -396,3 +398,108 @@ def generate_processing(
     )
 
     processing.write_standard_file(output_directory=dest_processing)
+
+
+def list_s3_folders(bucket: str, prefix: str, extension: Optional[str] = None) -> list:
+    """
+    List top-level 'folders' under a given S3 prefix that end with a given extension.
+
+    Parameters
+    ----------
+        bucket: str
+            Name of the S3 bucket.
+        prefix: str
+            S3 prefix path (e.g., "my/path/"), must end with "/".
+        extension: str
+            Extension to match folder names against (e.g., ".tif", ".zip").
+
+    Returns
+    -------
+        list: A list of matching folder prefixes (strings ending with "/").
+    """
+    if not prefix.endswith("/"):
+        prefix += "/"
+
+    s3 = boto3.client("s3")
+    paginator = s3.get_paginator("list_objects_v2")
+
+    folders = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix, Delimiter="/"):
+        for cp in page.get("CommonPrefixes", []):
+            folder_name = Path(cp["Prefix"].rstrip("/")).name
+            if extension is None or folder_name.endswith(extension):
+                folders.append(folder_name)
+
+    return folders
+
+
+def list_s3_files(bucket: str, prefix: str, extension: str) -> list:
+    """
+    List files under a given S3 prefix that end with a given extension.
+
+    Parameters
+    ----------
+    bucket: str
+        Name of the S3 bucket.
+    prefix: str
+        S3 prefix path (e.g., "my/path/"), must end with "/".
+    extension: str
+        Extension to match file names against (e.g., ".tif", ".zip").
+
+    Returns
+    -------
+    list: A list of matching file keys.
+    """
+    if not prefix.endswith("/"):
+        prefix += "/"
+
+    s3 = boto3.client("s3")
+    paginator = s3.get_paginator("list_objects_v2")
+
+    files = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix, Delimiter="/"):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if key.endswith(extension):
+                files.append(key)
+
+    return files
+
+
+def is_s3_path(path: str) -> bool:
+    """
+    Checks if a path is an s3 path
+
+    Parameters
+    ----------
+    path: str
+        Provided path
+
+    Returns
+    -------
+    bool
+        True if it is a S3 path,
+        False if not.
+    """
+    parsed = urlparse(str(path))
+    return parsed.scheme == "s3"
+
+
+def split_s3_path(s3_path: str):
+    """
+    Split an S3 URI into bucket and prefix.
+
+    Parameters
+    ----------
+    s3_path : str
+        Example: "s3://my-bucket/folder1/folder2/"
+
+    Returns
+    -------
+    (bucket, prefix) : tuple[str, str]
+    """
+    parsed = urlparse(s3_path)
+    bucket = parsed.netloc
+    # remove leading slash
+    prefix = parsed.path.lstrip("/")
+    return bucket, prefix

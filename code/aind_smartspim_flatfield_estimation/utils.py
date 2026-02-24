@@ -169,7 +169,10 @@ def get_col_rows_per_laser(metadata_json_path: str):
         tile_config = matadata_json.get("tiles")
 
     if metadata_json_path.exists() and tile_config is not None:
-        for time, config in tile_config.items():
+        if isinstance(tile_config, dict):
+            tile_config = list(tile_config.values())
+
+        for config in tile_config:
 
             if config["Side"] not in laser_side:
                 laser_side[config["Side"]] = set()

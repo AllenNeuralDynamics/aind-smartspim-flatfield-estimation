@@ -163,9 +163,16 @@ def get_col_rows_per_laser(metadata_json_path: str):
     laser_side = {"0": set(), "1": set()}
     matadata_json = read_json_as_dict(metadata_json_path)
     tile_config = matadata_json.get("tile_config")
+    
+    # Fix to the new microscope metadata json
+    if tile_config is None:
+        tile_config = matadata_json.get("tiles")
 
     if metadata_json_path.exists() and tile_config is not None:
-        for time, config in tile_config.items():
+        if isinstance(tile_config, dict):
+            tile_config = list(tile_config.values())
+
+        for config in tile_config:
 
             if config["Side"] not in laser_side:
                 laser_side[config["Side"]] = set()

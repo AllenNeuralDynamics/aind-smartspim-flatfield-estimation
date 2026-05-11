@@ -72,7 +72,7 @@ def validate_capsule_inputs(input_elements: List[str]) -> List[str]:
     return missing_inputs
 
 
-def compute_unified_flatfield(fields, shading_correction_per_slide, mode="median"):
+def compute_unified_flatfield(shading_correction_per_slide, mode="median"):
     """
     Gets the flatfields, darkfields and baselines to unify them
     based on the provided mode.
@@ -81,11 +81,10 @@ def compute_unified_flatfield(fields, shading_correction_per_slide, mode="median
     darkfields = []
     baselines = []
 
-    # Unifying fields with median
-    for slide_idx, fields in shading_correction_per_slide.items():
-        flatfields.append(fields["flatfield"])
-        darkfields.append(fields["darkfield"])
-        baselines.append(fields["baseline"])
+    for slide_idx, slide_fields in shading_correction_per_slide.items():
+        flatfields.append(slide_fields["flatfield"])
+        darkfields.append(slide_fields["darkfield"])
+        baselines.append(slide_fields["baseline"])
 
     print(f"Unifying fields using {mode} mode.")
     flatfield, darkfield, baseline = flatfield_estimation.unify_fields(
@@ -126,7 +125,7 @@ def main():
     missing_files = validate_capsule_inputs(required_input_elements)
 
     if len(missing_files):
-        msg = "We miss the following files in the" f"capsule input: {missing_files}"
+        msg = "We miss the following files in the " f"capsule input: {missing_files}"
         raise ValueError(msg)
 
     data_description_path = data_folder.joinpath("data_description.json")
@@ -239,20 +238,9 @@ def main():
                 )
             )
 
-        flatfields = []
-        darkfields = []
-        baselines = []
         upsample_scale = SCALE * 2
 
-        # Unifying fields with median
-        for slide_idx, fields in shading_correction_per_slide.items():
-            flatfields.append(fields["flatfield"])
-            darkfields.append(fields["darkfield"])
-            baselines.append(fields["baseline"])
-
-        flatfield, _, _ = compute_unified_flatfield(
-            flatfields, shading_correction_per_slide
-        )
+        flatfield, _, _ = compute_unified_flatfield(shading_correction_per_slide)
         print(f"Laser sides: {laser_side.keys()}")
 
         upsample_shape = tuple(upsample_scale * np.array(flatfield.shape))

@@ -6,6 +6,8 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import pywt
+from aind_smartspim_flatfield_estimation.flatfield_estimation import \
+    flatfield_correction  # noqa: F401
 from scipy import fftpack
 from skimage import filters
 
@@ -75,7 +77,7 @@ def get_foreground_background_mean(
         Foreground mean, background mean and
         image mask looking for cells
     """
-    cell_for = foreground_fraction(img.astype(np.float16), 400, 20)
+    cell_for = foreground_fraction(img.astype(np.float32), 400, 20)
     cell_for[cell_for > threshold_mask] = 1
     cell_for[cell_for <= threshold_mask] = 0
 
@@ -184,9 +186,7 @@ def log_space_fft_filtering(
         ch_sq = ch**2
         ch_power = np.sqrt(ch_sq)
 
-        otsu_threshold_sqrt = np.sqrt(
-            filters.threshold_otsu(ch_sq)
-        )  # threshold_otsu(ch_sq)
+        otsu_threshold_sqrt = np.sqrt(filters.threshold_otsu(ch_sq))
         threshold = min(max_threshold, otsu_threshold_sqrt)
 
         mask = ch_power > threshold
@@ -208,7 +208,7 @@ def log_space_fft_filtering(
         coeff_filtered.append((ch_filtered, cv, cd))
 
     img_log_filtered = pywt.waverec2(coeff_filtered, wavelet)
-    img_filtered = np.exp(img_log_filtered) + 1
+    img_filtered = np.exp(img_log_filtered) - 1
 
     return img_filtered
 
@@ -232,9 +232,13 @@ def normalize_image(images: List[np.array]) -> np.ndarray:
     images = np.array(images)
     min_val = np.min(images)
     max_val = np.max(images)
-    imgs_minus_min = images - min_val
     max_min = max_val - min_val
-    normalized_imgs = 1 + np.divide(imgs_minus_min, max_min).astype(np.float16)
+
+    if max_min == 0:
+        return np.ones_like(images, dtype=np.float32)
+
+    imgs_minus_min = images - min_val
+    normalized_imgs = (1.0 + np.divide(imgs_minus_min, max_min)).astype(np.float32)
 
     return normalized_imgs
 
@@ -293,8 +297,10 @@ def get_hemisphere_flatfield(
         the tiles from the corresponding hemisphere
     """
 
-    splitted_input_tile_path = str(input_tile_path).split("/")
-    XY_location_folders = splitted_input_tile_path[-2].split("_")
+    from pathlib import Path as _Path
+
+    xy_folder_name = _Path(input_tile_path).parent.name
+    XY_location_folders = xy_folder_name.split("_")
     x_folder = XY_location_folders[0]
     y_folder = XY_location_folders[1]
 
@@ -313,85 +319,6 @@ def get_hemisphere_flatfield(
         )
 
     return flatfields[brain_side]
-
-
-def flatfield_correction(
-    image_tiles: List[np.array],
-    flatfield: np.array,
-    darkfield: np.array,
-    baseline: Optional[np.array] = None,
-) -> np.array:
-    """
-    Corrects smartspim shadows in the tiles generated
-    at the SmartSPIM light-sheet microscope.
-
-    Parameters
-    ----------
-    image_tiles: List[np.array]
-        Image tiles that will be corrected
-
-    flatfield: np.array
-        Estimated flatfield
-
-    darkfield: np.array
-        Estimated darkfield
-
-    baseline: np.array
-        Estimated baseline.
-        Default: None
-
-    Returns
-    -------
-    np.array
-        Corrected tiles
-    """
-
-    image_tiles = np.array(image_tiles)
-
-    if image_tiles.ndim != flatfield.ndim:
-        flatfield = np.expand_dims(flatfield, axis=0)
-
-    if image_tiles.ndim != darkfield.ndim:
-        darkfield = np.expand_dims(darkfield, axis=0)
-
-    darkfield = darkfield[: image_tiles.shape[-2], : image_tiles.shape[-1]]
-
-    if darkfield.shape != image_tiles.shape:
-        msg = (
-            "Please, check the shape of the darkfield."
-            f"Image: {image_tiles.shape} - Darkfield: {darkfield.shape}"
-        )
-        raise ValueError(msg)
-
-    if flatfield.shape != image_tiles.shape:
-        msg = (
-            "Please, check the shape of the flatfield."
-            f"Image: {image_tiles.shape} - Flatfield: {flatfield.shape}"
-        )
-        raise ValueError(msg)
-
-    if baseline is None:
-        baseline = np.zeros((image_tiles.shape[0],))
-
-    baseline_indxs = tuple([slice(None)] + ([np.newaxis] * (image_tiles.ndim - 1)))
-
-    # Subtracting dark field
-    negative_darkfield = np.where(image_tiles <= darkfield)
-    positive_darkfield = np.where(image_tiles > darkfield)
-
-    # subtracting darkfield
-    image_tiles[negative_darkfield] = 0
-    image_tiles[positive_darkfield] = (
-        image_tiles[positive_darkfield] - darkfield[positive_darkfield]
-    )
-
-    # Applying flatfield
-    corrected_tiles = image_tiles / flatfield - baseline[baseline_indxs]
-
-    # Converting back to uint16
-    corrected_tiles = np.clip(corrected_tiles, 0, 65535).astype("uint16")
-
-    return corrected_tiles
 
 
 def filter_stripes(

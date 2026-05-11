@@ -2,6 +2,7 @@
 Utilities module
 """
 
+import errno
 import json
 import os
 from pathlib import Path
@@ -31,7 +32,7 @@ def get_code_ocean_cpu_limit():
     aws_batch_job_id = os.environ.get("AWS_BATCH_JOB_ID")
 
     if co_cpus:
-        return co_cpus
+        return int(co_cpus)
     if aws_batch_job_id:
         return 1
 
@@ -118,10 +119,13 @@ def pick_slices(
     end_slice = z_dim - start_slice + 1
     slices = list(range(start_slice, end_slice, step_size))
 
-    picked_slices = None
     if read_lazy:
-        picked_slices = [image_stack[i] for i in slices]
-        picked_slices = da.stack(picked_slices)
+        picked_slices = da.stack([image_stack[i] for i in slices])
+    else:
+        if hasattr(image_stack, "compute"):
+            picked_slices = np.stack([image_stack[i].compute() for i in slices])
+        else:
+            picked_slices = np.stack([np.asarray(image_stack[i]) for i in slices])
 
     return picked_slices, slices
 
@@ -161,12 +165,12 @@ def get_col_rows_per_laser(metadata_json_path: str):
         raise FileNotFoundError(f"{metadata_json_path} does not exists.")
 
     laser_side = {"0": set(), "1": set()}
-    matadata_json = read_json_as_dict(metadata_json_path)
-    tile_config = matadata_json.get("tile_config")
-    
+    metadata_json = read_json_as_dict(metadata_json_path)
+    tile_config = metadata_json.get("tile_config")
+
     # Fix to the new microscope metadata json
     if tile_config is None:
-        tile_config = matadata_json.get("tiles")
+        tile_config = metadata_json.get("tiles")
 
     if metadata_json_path.exists() and tile_config is not None:
         if isinstance(tile_config, dict):
@@ -288,6 +292,7 @@ def get_slicer_per_side(
 
     channel_path = Path(channel_path)
     data_per_laser = {k: [] for k in tiles_per_laser.keys()}
+    laser_sets = {side: set(tiles) for side, tiles in tiles_per_laser.items()}
     cols = set()
     rows = set()
 
@@ -317,10 +322,10 @@ def get_slicer_per_side(
 
             curr_nm = curr_nm.replace(".zarr", "")
 
-            if curr_nm in tiles_per_laser["0"]:
+            if curr_nm in laser_sets["0"]:
                 data_per_laser["0"].append(curr_slc)
 
-            elif curr_nm in tiles_per_laser["1"]:
+            elif curr_nm in laser_sets["1"]:
                 data_per_laser["1"].append(curr_slc)
 
             else:
@@ -359,7 +364,7 @@ def create_folder(dest_dir, verbose: Optional[bool] = False) -> None:
                 print(f"Creating new directory: {dest_dir}")
             os.makedirs(dest_dir)
         except OSError as e:
-            if e.errno != os.errno.EEXIST:
+            if e.errno != errno.EEXIST:
                 raise
 
 

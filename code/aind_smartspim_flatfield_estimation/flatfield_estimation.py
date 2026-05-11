@@ -39,7 +39,6 @@ def shading_correction(
         for further post-processing.
     """
     shading_obj = BaSiC(**shading_parameters)
-    shading_results = []
     shading_obj.fit(images=np.array(slides), fitting_weight=mask)
     shading_results = {
         "flatfield": shading_obj.flatfield,
@@ -89,7 +88,7 @@ def flatfield_correction(
     if image_tiles.ndim != darkfield.ndim:
         darkfield = np.expand_dims(darkfield, axis=0)
 
-    darkfield = darkfield[: image_tiles.shape[-2], : image_tiles.shape[-1]]
+    darkfield = darkfield[..., : image_tiles.shape[-2], : image_tiles.shape[-1]]
 
     if darkfield.shape != image_tiles.shape:
         msg = (
@@ -120,8 +119,12 @@ def flatfield_correction(
         image_tiles[positive_darkfield] - darkfield[positive_darkfield]
     )
 
-    # Applying flatfield
-    corrected_tiles = image_tiles / flatfield - baseline[baseline_indxs]
+    # Applying flatfield (guard against division by zero where flatfield == 0)
+    safe_flatfield = np.where(flatfield > 0, flatfield, 1)
+    corrected_tiles = (
+        np.where(flatfield > 0, image_tiles / safe_flatfield, 0)
+        - baseline[baseline_indxs]
+    )
 
     # Converting back to uint16
     corrected_tiles = np.clip(corrected_tiles, 0, 65535).astype("uint16")
@@ -264,14 +267,8 @@ def unify_fields(
     else:
         raise NotImplementedError("Accepted values: mean, median, mip")
 
-    flatfield = flatfield.astype(
-        np.float16
-    )  # np.clip(flatfield, 0, 65535).astype('uint16')
-    darkfield = darkfield.astype(
-        np.float16
-    )  # np.clip(darkfield, 0, 65535).astype('uint16')
-    baseline = baseline.astype(
-        np.float16
-    )  # np.clip(baseline, 0, 65535).astype('uint16')
+    flatfield = flatfield.astype(np.float32)
+    darkfield = darkfield.astype(np.float32)
+    baseline = baseline.astype(np.float32)
 
     return flatfield, darkfield, baseline

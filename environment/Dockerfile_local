@@ -21,7 +21,8 @@ RUN conda create -y -n flatfield_estimation python=3.9 && \
         matplotlib \
         natsort==8.4.0 \
         PyWavelets==1.6.0 \
-        boto3 && \
+        boto3 \
+        s3fs && \
     conda clean --all --yes
 
 # ----------- runtime Stage ----------- #

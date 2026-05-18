@@ -1,4 +1,4 @@
-# hash:sha256:d28cb48df72ecf4d4bcc454364ad66a9e291fe3c253085716cf57f904ec7a5ff
+# hash:sha256:2273321e3b08a99f413fedfec14e6a95b1457f2825cc902793196d877ab18d7a
 ARG REGISTRY_HOST
 FROM $REGISTRY_HOST/codeocean/aind-smartspim-flatfield-estimation:si-0.0.4
 

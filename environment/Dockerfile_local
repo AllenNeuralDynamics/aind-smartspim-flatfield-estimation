@@ -21,10 +21,12 @@ RUN conda create -y -n flatfield_estimation python=3.9 && \
         matplotlib \
         natsort==8.4.0 \
         PyWavelets==1.6.0 \
-        hyperactive==4.6.0 \ # Fix https://github.com/peng-lab/BaSiCPy/issues/162
+        hyperactive==4.6.0 \
         boto3 \
         s3fs && \
     conda clean --all --yes
+
+# hyperactive==4.6.0 fixes https://github.com/peng-lab/BaSiCPy/issues/162
 
 # ----------- runtime Stage ----------- #
 FROM continuumio/miniconda3:23.9.0-0

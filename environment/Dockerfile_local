@@ -21,7 +21,7 @@ RUN conda create -y -n flatfield_estimation python=3.9 && \
         matplotlib \
         natsort==8.4.0 \
         PyWavelets==1.6.0 \
-        hyperactive==4.6.0 \
+        hyperactive==4.6.0 \ # Fix https://github.com/peng-lab/BaSiCPy/issues/162
         boto3 \
         s3fs && \
     conda clean --all --yes

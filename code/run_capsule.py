@@ -3,6 +3,7 @@ Run file for flatfield estimation
 """
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -14,10 +15,15 @@ import tifffile as tif
 from aind_data_schema.core.processing import DataProcess, ProcessName
 from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
 from aind_smartspim_flatfield_estimation.__init__ import (__maintainers__,
+                                                          __pipeline_name__,
                                                           __pipeline_version__,
+                                                          __title__,
                                                           __url__, __version__)
 from natsort import natsorted
+from schlog import setup_logging
 from skimage.transform import resize
+
+logger = logging.getLogger(__name__)
 
 
 def save_dict_as_json(filename: str, dictionary: dict) -> None:
@@ -97,6 +103,19 @@ def main():
     """
     Main function
     """
+    process_name = f"{__title__}"
+
+    setup_logging(
+        model={
+            "pipeline_name": __pipeline_name__,
+            "process_name": process_name,
+            "software_name": __title__,
+            "software_version": __version__,
+        }
+    )
+
+    stage_start_time = time.monotonic()
+
     SCALE = 2
     z_step_percentage = 0.3  # % of the z planes
 
@@ -135,162 +154,197 @@ def main():
         data_description = utils.read_json_as_dict(filepath=data_description_path)
 
     dataset_name = data_description.get("name")
-    print(f"Dataset name: {dataset_name}")
 
-    metadata_folder = results_folder.joinpath("metadata")
-    utils.create_folder(str(metadata_folder))
-    metadata_json_path = data_folder.joinpath("metadata.json")
-
-    # Dispatcher generates preprocess_{channel_name}.json files
-    # These are split to instantiate a single machine per channel
-    # Find channel configuration files using multiple patterns
-    channel_config_paths = list(data_folder.glob("preprocess_*.json"))
-
-    if not channel_config_paths:
-        print("No preprocess_*.json configs found, searching for Ex_*_Em_* configs...")
-        channel_config_paths = list(data_folder.glob("Ex_*_Em_*"))
-
-    if not channel_config_paths:
-        raise FileNotFoundError(
-            f"No channel configuration files found in {data_folder}. "
-            "Expected files matching 'preprocess_*.json' or 'Ex_*_Em_*'."
-        )
-
-    laser_side = utils.get_col_rows_per_laser(metadata_json_path=metadata_json_path)
-
-    print("Laser sides: ", laser_side)
-
-    save_dict_as_json(
-        filename=str(results_folder.joinpath("laser_tiles.json")), dictionary=laser_side
+    logger.info(
+        "Flatfield estimation started",
+        extra={
+            "event_type": "stage_start",
+            "dataset_name": dataset_name,
+            "data_folder": str(data_folder),
+            "results_folder": str(results_folder),
+            "shading_parameters": shading_parameters,
+            "z_step_percentage": z_step_percentage,
+            "scale": SCALE,
+        },
     )
 
-    data_processes = []
-    for i, channel_config_path in enumerate(channel_config_paths):
+    try:
+        metadata_folder = results_folder.joinpath("metadata")
+        utils.create_folder(str(metadata_folder))
+        metadata_json_path = data_folder.joinpath("metadata.json")
 
-        channel_path = channel_config_path
-        channel_name = channel_path.stem
+        # Dispatcher generates preprocess_{channel_name}.json files
+        # These are split to instantiate a single machine per channel
+        # Find channel configuration files using multiple patterns
+        channel_config_paths = list(data_folder.glob("preprocess_*.json"))
 
-        # If s3 path provided, read from there
-        if Path(channel_config_path).suffix == ".json":
-            channel_config = utils.read_json_as_dict(filepath=channel_config_path)
-            origin_path = channel_config.get("input_data")
-            channel_name = channel_config.get("channel")
+        if not channel_config_paths:
+            logger.warning("No preprocess_*.json configs found, searching for Ex_*_Em_* configs...")
+            channel_config_paths = list(data_folder.glob("Ex_*_Em_*"))
 
-            channel_path = f"{origin_path}/{channel_name}"
-
-        start_time = time.time()
-
-        print(f"Computing flats for channel: {channel_name}")
-
-        # Lazy reading just to check the shape
-        tile_paths = []
-
-        # Reading from S3 if provided the path
-        if utils.is_s3_path(str(channel_path)):
-            bucket_name, prefix = utils.split_s3_path(str(channel_path))
-            tile_paths = utils.list_s3_folders(
-                bucket=bucket_name, prefix=prefix, extension=".zarr"
+        if not channel_config_paths:
+            raise FileNotFoundError(
+                f"No channel configuration files found in {data_folder}. "
+                "Expected files matching 'preprocess_*.json' or 'Ex_*_Em_*'."
             )
-            tile_paths = [f"{channel_path}/{tile_path}" for tile_path in tile_paths]
-        else:
-            channel_path = Path(channel_path)
-            tile_paths = list(channel_path.glob("*.zarr"))
 
-        check_zarr = f"{tile_paths[0]}/{SCALE}"
-        lazy_data = da.squeeze(da.from_zarr(check_zarr))
+        laser_side = utils.get_col_rows_per_laser(metadata_json_path=metadata_json_path)
 
-        picked_slices, indices = utils.pick_slices(
-            lazy_data, percentage=z_step_percentage, read_lazy=False
+        logger.info("Laser sides: ", extra={"laser_sides": laser_side})
+
+        save_dict_as_json(
+            filename=str(results_folder.joinpath("laser_tiles.json")), dictionary=laser_side
         )
-        slices = []
-        names = []
 
-        cols = set()
-        rows = set()
-        for folder in tile_paths:
-            folder_parsed = Path(folder)
-            if folder_parsed.suffix == ".zarr":
-                col, row = str(folder_parsed.stem).split("_")
-                cols.add(col)
-                rows.add(row)
+        data_processes = []
+        for i, channel_config_path in enumerate(channel_config_paths):
 
-        cols = natsorted(cols)
-        rows = natsorted(rows)
+            channel_path = channel_config_path
+            channel_name = channel_path.stem
 
-        for indice in indices:
-            params = {
-                "dataset_path": channel_path,
-                "cols": cols,
-                "rows": rows,
-                "slide_idx": indice,
-                "scale": 2,
-            }
-            curr_slcs, curr_nms = utils.get_brain_slices(**params)
-            slices.append(curr_slcs)
-            names.append(curr_nms)
+            # If s3 path provided, read from there
+            if Path(channel_config_path).suffix == ".json":
+                channel_config = utils.read_json_as_dict(filepath=channel_config_path)
+                origin_path = channel_config.get("input_data")
+                channel_name = channel_config.get("channel")
 
-        shading_correction_per_slide = {}
-        for slice_idx in range(len(slices)):
-            curr_slices = slices[slice_idx]
-            shading_correction_per_slide[slice_idx] = (
-                flatfield_estimation.shading_correction(
-                    slides=curr_slices, shading_parameters=shading_parameters
+                channel_path = f"{origin_path}/{channel_name}"
+
+            start_time = time.time()
+
+            logger.info(f"Computing flats for channel: {channel_name}")
+
+            # Lazy reading just to check the shape
+            tile_paths = []
+
+            # Reading from S3 if provided the path
+            if utils.is_s3_path(str(channel_path)):
+                bucket_name, prefix = utils.split_s3_path(str(channel_path))
+                tile_paths = utils.list_s3_folders(
+                    bucket=bucket_name, prefix=prefix, extension=".zarr"
+                )
+                tile_paths = [f"{channel_path}/{tile_path}" for tile_path in tile_paths]
+            else:
+                channel_path = Path(channel_path)
+                tile_paths = list(channel_path.glob("*.zarr"))
+
+            check_zarr = f"{tile_paths[0]}/{SCALE}"
+            lazy_data = da.squeeze(da.from_zarr(check_zarr))
+
+            picked_slices, indices = utils.pick_slices(
+                lazy_data, percentage=z_step_percentage, read_lazy=False
+            )
+            slices = []
+            names = []
+
+            cols = set()
+            rows = set()
+            for folder in tile_paths:
+                folder_parsed = Path(folder)
+                if folder_parsed.suffix == ".zarr":
+                    col, row = str(folder_parsed.stem).split("_")
+                    cols.add(col)
+                    rows.add(row)
+
+            cols = natsorted(cols)
+            rows = natsorted(rows)
+
+            for indice in indices:
+                params = {
+                    "dataset_path": channel_path,
+                    "cols": cols,
+                    "rows": rows,
+                    "slide_idx": indice,
+                    "scale": 2,
+                }
+                curr_slcs, curr_nms = utils.get_brain_slices(**params)
+                slices.append(curr_slcs)
+                names.append(curr_nms)
+
+            shading_correction_per_slide = {}
+            for slice_idx in range(len(slices)):
+                curr_slices = slices[slice_idx]
+                shading_correction_per_slide[slice_idx] = (
+                    flatfield_estimation.shading_correction(
+                        slides=curr_slices, shading_parameters=shading_parameters
+                    )
+                )
+
+            upsample_scale = SCALE * 2
+
+            flatfield, _, _ = compute_unified_flatfield(shading_correction_per_slide)
+            logger.info(f"Laser sides: {laser_side.keys()}")
+
+            upsample_shape = tuple(upsample_scale * np.array(flatfield.shape))
+            upsampled_flatfield = resize(
+                flatfield,
+                upsample_shape,
+                order=4,
+                mode="reflect",
+                cval=0,
+                clip=True,
+                preserve_range=False,
+                anti_aliasing=None,
+            )
+            output_flats = []
+            for side in laser_side.keys():
+                flat_name = str(
+                    results_folder.joinpath(
+                        f"estimated_flat_laser_{channel_name}_side_{side}.tif"
+                    )
+                )
+                output_flats.append(flat_name)
+
+                tif.imwrite(flat_name, upsampled_flatfield)
+
+            end_time = time.time()
+
+            data_processes.append(
+                DataProcess(
+                    name=ProcessName.IMAGE_FLAT_FIELD_CORRECTION,
+                    software_version=__version__,
+                    start_date_time=start_time,
+                    end_date_time=end_time,
+                    input_location=str(channel_path),
+                    output_location=str(results_folder),
+                    outputs={"flatfield_paths": output_flats},
+                    code_url=__url__,
+                    code_version=__version__,
+                    parameters={
+                        "shading_parameters": shading_parameters,
+                    },
+                    notes=f"Flatfield estimation for channel {channel_name}",
                 )
             )
 
-        upsample_scale = SCALE * 2
-
-        flatfield, _, _ = compute_unified_flatfield(shading_correction_per_slide)
-        print(f"Laser sides: {laser_side.keys()}")
-
-        upsample_shape = tuple(upsample_scale * np.array(flatfield.shape))
-        upsampled_flatfield = resize(
-            flatfield,
-            upsample_shape,
-            order=4,
-            mode="reflect",
-            cval=0,
-            clip=True,
-            preserve_range=False,
-            anti_aliasing=None,
-        )
-        output_flats = []
-        for side in laser_side.keys():
-            flat_name = str(
-                results_folder.joinpath(
-                    f"estimated_flat_laser_{channel_name}_side_{side}.tif"
-                )
-            )
-            output_flats.append(flat_name)
-
-            tif.imwrite(flat_name, upsampled_flatfield)
-
-        end_time = time.time()
-
-        data_processes.append(
-            DataProcess(
-                name=ProcessName.IMAGE_FLAT_FIELD_CORRECTION,
-                software_version=__version__,
-                start_date_time=start_time,
-                end_date_time=end_time,
-                input_location=str(channel_path),
-                output_location=str(results_folder),
-                outputs={"flatfield_paths": output_flats},
-                code_url=__url__,
-                code_version=__version__,
-                parameters={
-                    "shading_parameters": shading_parameters,
-                },
-                notes=f"Flatfield estimation for channel {channel_name}",
-            )
+        utils.generate_processing(
+            data_processes=data_processes,
+            dest_processing=metadata_folder,
+            processor_full_name=__maintainers__[0],
+            pipeline_version=__pipeline_version__,
         )
 
-    utils.generate_processing(
-        data_processes=data_processes,
-        dest_processing=metadata_folder,
-        processor_full_name=__maintainers__[0],
-        pipeline_version=__pipeline_version__,
-    )
+        duration_seconds = round(time.monotonic() - stage_start_time, 3)
+        logger.info(
+            "Flatfield estimation completed",
+            extra={
+                "event_type": "stage_complete",
+                "dataset_name": dataset_name,
+                "duration_seconds": duration_seconds,
+            },
+        )
+    except Exception:
+        duration_seconds = round(time.monotonic() - stage_start_time, 3)
+        logger.error(
+            "Flatfield estimation failed",
+            exc_info=True,
+            extra={
+                "event_type": "stage_failure",
+                "dataset_name": dataset_name,
+                "duration_seconds": duration_seconds,
+            },
+        )
+        raise
 
 
 if __name__ == "__main__":

@@ -203,7 +203,6 @@ def estimate_flats_per_laser(tiles_per_side, shading_params):
     flats = {key: None for key in tiles_per_side.keys()}
     for side, tiles in tiles_per_side.items():
 
-        print(f"Estimating flats for side {side}")
         flats[side] = shading_correction(
             slides=tiles, shading_parameters=shading_params
         )

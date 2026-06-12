@@ -383,7 +383,14 @@ class ResourceMonitor:
     step is finished.
     """
 
-    def __init__(self, interval_seconds: float = 1.0):
+    def __init__(self, interval_seconds: Optional[float] = 1.0):
+        """
+        Initializes the ResourceMonitor.
+        Parameters
+        ----------
+        interval_seconds: Optional[float]
+            Time interval in seconds between resource usage samples. Default is 1 second.
+        """
         self._interval = interval_seconds
         self._cpu_usage = []
         self._ram_usage = []
@@ -391,6 +398,7 @@ class ResourceMonitor:
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def _run(self) -> None:
+        """Background thread method for sampling CPU and RAM usage."""
 
         while not self._stop_event.is_set():
             now = datetime.now(timezone.utc)
@@ -414,9 +422,11 @@ class ResourceMonitor:
         self._thread.join(timeout=self._interval + 1)
 
     def __enter__(self) -> "ResourceMonitor":
+        """Context manager entry point to start resource monitoring."""
         return self.start()
 
     def __exit__(self, *exc_info) -> None:
+        """Context manager exit point to stop resource monitoring."""
         self.stop()
 
     def to_resource_usage(self, cpu_cores: Optional[int] = None):

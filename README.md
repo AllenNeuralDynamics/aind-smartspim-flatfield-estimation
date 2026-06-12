@@ -55,7 +55,7 @@ aind-smartspim-flatfield-estimation/
 
 | Package | Version |
 |---------|---------|
-| Python | 3.9 |
+| Python | 3.10 |
 | numpy | 1.24.2 |
 | BaSiCPy | 1.1.0 |
 | jax / jaxlib | 0.4.23 |
@@ -63,7 +63,7 @@ aind-smartspim-flatfield-estimation/
 | zarr | 2.18.2 |
 | PyWavelets | 1.6.0 |
 | natsort | 8.4.0 |
-| aind-data-schema | 1.0.0 |
+| aind-data-schema | 2.8.0 |
 | boto3 / s3fs | latest |
 
 ---

@@ -6,13 +6,15 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
 import dask.array as da
 import numpy as np
 import tifffile as tif
-from aind_data_schema.core.processing import DataProcess, ProcessName
+from aind_data_schema.components.identifiers import Code
+from aind_data_schema.core.processing import DataProcess, ProcessName, ProcessStage
 from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
 from aind_smartspim_flatfield_estimation.__init__ import (__maintainers__,
                                                           __pipeline_name__,
@@ -210,7 +212,8 @@ def main():
 
                 channel_path = f"{origin_path}/{channel_name}"
 
-            start_time = time.time()
+            start_time = datetime.now(timezone.utc)
+            resource_monitor = utils.ResourceMonitor(interval_seconds=2.0).start()
 
             logger.info(f"Computing flats for channel: {channel_name}")
 
@@ -297,22 +300,31 @@ def main():
 
                 tif.imwrite(flat_name, upsampled_flatfield)
 
-            end_time = time.time()
+            resource_monitor.stop()
+            end_time = datetime.now(timezone.utc)
 
             data_processes.append(
                 DataProcess(
-                    name=ProcessName.IMAGE_FLAT_FIELD_CORRECTION,
-                    software_version=__version__,
+                    process_type=ProcessName.IMAGE_FLAT_FIELD_CORRECTION,
+                    name=f"Flatfield estimation - {channel_name}",
+                    stage=ProcessStage.PROCESSING,
+                    code=Code(
+                        url=__url__,
+                        name=__title__,
+                        version=__version__,
+                    ),
+                    experimenters=__maintainers__,
+                    pipeline_name=__pipeline_name__,
                     start_date_time=start_time,
                     end_date_time=end_time,
-                    input_location=str(channel_path),
-                    output_location=str(results_folder),
-                    outputs={"flatfield_paths": output_flats},
-                    code_url=__url__,
-                    code_version=__version__,
-                    parameters={
+                    output_path=str(results_folder),
+                    output_parameters={
+                        "flatfield_paths": output_flats,
+                        "input_location": str(channel_path),
                         "shading_parameters": shading_parameters,
+                        "duration_seconds": (end_time - start_time).total_seconds(),
                     },
+                    resources=resource_monitor.to_resource_usage(cpu_cores=int(cpu_count)),
                     notes=f"Flatfield estimation for channel {channel_name}",
                 )
             )
@@ -320,8 +332,9 @@ def main():
         utils.generate_processing(
             data_processes=data_processes,
             dest_processing=metadata_folder,
-            processor_full_name=__maintainers__[0],
+            pipeline_name=__pipeline_name__,
             pipeline_version=__pipeline_version__,
+            pipeline_url="https://github.com/AllenNeuralDynamics/aind-smartspim-pipeline",
         )
 
         duration_seconds = round(time.monotonic() - stage_start_time, 3)

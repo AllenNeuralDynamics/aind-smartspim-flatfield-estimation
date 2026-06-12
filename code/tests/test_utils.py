@@ -1,9 +1,11 @@
 """Test module for utils"""
 
 import os
+import platform
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
@@ -73,6 +75,8 @@ def _setup_missing_modules():
         "aind_data_schema",
         "aind_data_schema.core",
         "aind_data_schema.core.processing",
+        "aind_data_schema.components",
+        "aind_data_schema.components.identifiers",
     ):
         try:
             __import__(_mod)
@@ -90,6 +94,7 @@ _setup_missing_modules()
 import dask.array as da  # noqa: E402
 
 from aind_smartspim_flatfield_estimation.utils import (  # noqa: E402
+    ResourceMonitor,
     create_folder,
     generate_processing,
     get_brain_slices,
@@ -265,13 +270,38 @@ class TestUtilities(unittest.TestCase):
         generate_processing(
             data_processes=[],
             dest_processing=self.temp_folder,
-            processor_full_name="Test User",
+            pipeline_name="SmartSPIM Pipeline",
             pipeline_version="1.0",
+            pipeline_url="https://github.com/AllenNeuralDynamics/aind-smartspim-pipeline",
         )
 
         processing_path = Path(self.temp_folder).joinpath("processing.json")
 
         self.assertEqual(processing_path.exists(), True)
+
+    @unittest.skipUnless(AIND_DATA_SCHEMA_AVAILABLE, "aind_data_schema not installed")
+    def test_resource_monitor(self):
+        """
+        Tests that the resource monitor collects CPU/RAM samples and
+        produces a valid ResourceUsage record.
+        """
+        monitor = ResourceMonitor(interval_seconds=0.05)
+        monitor.start()
+        try:
+            time.sleep(0.2)
+        finally:
+            monitor.stop()
+
+        resources = monitor.to_resource_usage(cpu_cores=4)
+
+        self.assertEqual(resources.os, platform.system())
+        self.assertEqual(resources.architecture, platform.machine())
+        self.assertEqual(resources.cpu_cores, 4)
+        self.assertGreater(len(resources.cpu_usage), 0)
+        self.assertGreater(len(resources.ram_usage), 0)
+        for sample in resources.cpu_usage + resources.ram_usage:
+            self.assertGreaterEqual(sample.usage, 0)
+            self.assertLessEqual(sample.usage, 100)
 
     @classmethod
     def tearDownClass(cls) -> None:

@@ -9,9 +9,10 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create conda environment and install dependencies
-RUN conda create -y -n flatfield_estimation python=3.9 && \
+RUN conda create -y -n flatfield_estimation python=3.10 && \
     /opt/conda/envs/flatfield_estimation/bin/pip install --no-cache-dir \
-        aind-data-schema==1.0.0 \
+        aind-data-schema==2.8.0 \
+        "aind-data-schema-models>=5.7.1,<6" \
         dask[distributed] \
         numpy==1.24.2 \
         BaSiCPy==1.1.0 \

@@ -22,7 +22,7 @@ from aind_smartspim_flatfield_estimation.__init__ import (__maintainers__,
                                                           __title__,
                                                           __url__, __version__)
 from natsort import natsorted
-from schlog import setup_logging
+from log_schema import setup_logging
 from skimage.transform import resize
 
 logger = logging.getLogger(__name__)

@@ -69,8 +69,17 @@ def _setup_missing_modules():
         sys.modules.setdefault("boto3", MagicMock())
 
     # aind_data_schema and sub-modules
+    # v2.8.0 introduced ResourceTimestamped/ResourceUsage in core.processing and
+    # moved Code to components.identifiers. If any of these are missing the installed
+    # version is too old — stub the whole schema out so tests degrade gracefully.
     global AIND_DATA_SCHEMA_AVAILABLE
     AIND_DATA_SCHEMA_AVAILABLE = True
+
+    _V2_SYMBOLS = {
+        "aind_data_schema.core.processing": ["ResourceTimestamped", "ResourceUsage"],
+        "aind_data_schema.components.identifiers": ["Code"],
+    }
+
     for _mod in (
         "aind_data_schema",
         "aind_data_schema.core",
@@ -79,9 +88,14 @@ def _setup_missing_modules():
         "aind_data_schema.components.identifiers",
     ):
         try:
-            __import__(_mod)
+            import importlib
+            _loaded = importlib.import_module(_mod)
+            # Verify v2.8.0-specific symbols are present; if not, treat as unavailable
+            for _sym in _V2_SYMBOLS.get(_mod, []):
+                if not hasattr(_loaded, _sym):
+                    raise ImportError(f"{_sym} missing from {_mod}")
         except ImportError:
-            sys.modules.setdefault(_mod, MagicMock())
+            sys.modules[_mod] = MagicMock()  # override, not setdefault
             AIND_DATA_SCHEMA_AVAILABLE = False
 
 

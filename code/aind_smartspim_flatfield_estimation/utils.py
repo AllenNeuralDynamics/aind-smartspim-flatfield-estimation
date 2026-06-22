@@ -17,10 +17,10 @@ import dask.array as da
 import numpy as np
 import psutil
 from aind_data_schema.components.identifiers import Code
-from aind_data_schema.core.processing import DataProcess, Processing
+from aind_data_schema.core.processing import (DataProcess, Processing,
+                                               ResourceTimestamped,
+                                               ResourceUsage)
 from aind_data_schema_models.units import MemoryUnit
-from aind_data_schema.core.processing import ResourceTimestamped
-from aind_data_schema.core.processing import ResourceUsage
 from natsort import natsorted
 
 

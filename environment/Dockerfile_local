@@ -23,6 +23,8 @@ RUN conda create -y -n flatfield_estimation python=3.10 && \
         natsort==8.4.0 \
         PyWavelets==1.6.0 \
         log-schema==0.2.10.dev1 \
+        hyperactive==4.6.0 \
+        "gradient-free-optimizers<1.9.0" \
         boto3 \
         s3fs && \
     conda clean --all --yes

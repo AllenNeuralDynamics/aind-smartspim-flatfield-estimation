@@ -451,6 +451,8 @@ class ResourceMonitor:
             cpu_cores=cpu_cores,
             system_memory=round(psutil.virtual_memory().total / (1024**3), 2),
             system_memory_unit=MemoryUnit.GB,
+            ram=round(psutil.virtual_memory().total / (1024**3), 2),
+            ram_unit=MemoryUnit.GB,
             cpu_usage=self._cpu_usage,
             ram_usage=self._ram_usage,
         )

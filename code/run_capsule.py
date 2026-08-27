@@ -350,13 +350,14 @@ def main():
                 "duration_seconds": duration_seconds,
             },
         )
-    except Exception:
+    except Exception as e:
         duration_seconds = round(time.monotonic() - stage_start_time, 3)
         logger.error(
             "Flatfield estimation failed",
             exc_info=True,
             extra={
                 "event_type": "stage_failure",
+                "error": f"{type(e).__name__}: {e}",
                 "dataset_name": dataset_name,
                 "duration_seconds": duration_seconds,
             },

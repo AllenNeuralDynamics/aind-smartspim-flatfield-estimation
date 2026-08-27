@@ -94,7 +94,7 @@ def compute_unified_flatfield(shading_correction_per_slide, mode="median"):
         darkfields.append(slide_fields["darkfield"])
         baselines.append(slide_fields["baseline"])
 
-    print(f"Unifying fields using {mode} mode.")
+    logger.info(f"Unifying flatfield/darkfield estimates using {mode} mode")
     flatfield, darkfield, baseline = flatfield_estimation.unify_fields(
         flatfields, darkfields, baselines, mode=mode
     )
@@ -157,20 +157,20 @@ def main():
 
     dataset_name = data_description.get("name")
 
-    logger.info(
-        "Flatfield estimation started",
-        extra={
-            "event_type": "stage_start",
-            "dataset_name": dataset_name,
-            "data_folder": str(data_folder),
-            "results_folder": str(results_folder),
-            "shading_parameters": shading_parameters,
-            "z_step_percentage": z_step_percentage,
-            "scale": SCALE,
-        },
-    )
-
     try:
+        logger.info(
+            "Flatfield estimation started",
+            extra={
+                "event_type": "stage_start",
+                "dataset_name": dataset_name,
+                "data_folder": str(data_folder),
+                "results_folder": str(results_folder),
+                "z_step_percentage": z_step_percentage,
+                "scale": SCALE,
+            },
+        )
+        logger.debug(f"Shading parameters: {shading_parameters}")
+
         metadata_folder = results_folder.joinpath("metadata")
         utils.create_folder(str(metadata_folder))
         metadata_json_path = data_folder.joinpath("metadata.json")
@@ -192,7 +192,11 @@ def main():
 
         laser_side = utils.get_col_rows_per_laser(metadata_json_path=metadata_json_path)
 
-        logger.info("Laser sides: ", extra={"laser_sides": laser_side})
+        logger.info(
+            f"Computed tile layout for {len(laser_side)} lasers",
+            extra={"dataset_name": dataset_name, "lasers": list(laser_side.keys())},
+        )
+        logger.debug(f"Laser sides: {laser_side}")
 
         save_dict_as_json(
             filename=str(results_folder.joinpath("laser_tiles.json")), dictionary=laser_side
@@ -276,7 +280,7 @@ def main():
             upsample_scale = SCALE * 2
 
             flatfield, _, _ = compute_unified_flatfield(shading_correction_per_slide)
-            logger.info(f"Laser sides: {laser_side.keys()}")
+            logger.debug(f"Unified flatfield computed for lasers: {list(laser_side.keys())}")
 
             upsample_shape = tuple(upsample_scale * np.array(flatfield.shape))
             upsampled_flatfield = resize(

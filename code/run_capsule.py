@@ -16,13 +16,16 @@ import tifffile as tif
 from aind_data_schema.components.identifiers import Code
 from aind_data_schema.core.processing import DataProcess, ProcessName, ProcessStage
 from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
-from aind_smartspim_flatfield_estimation.__init__ import (__maintainers__,
-                                                          __pipeline_name__,
-                                                          __pipeline_version__,
-                                                          __title__,
-                                                          __url__, __version__)
-from natsort import natsorted
+from aind_smartspim_flatfield_estimation.__init__ import (
+    __maintainers__,
+    __pipeline_name__,
+    __pipeline_version__,
+    __title__,
+    __url__,
+    __version__,
+)
 from log_schema import setup_logging
+from natsort import natsorted
 from skimage.transform import resize
 
 logger = logging.getLogger(__name__)
@@ -146,7 +149,7 @@ def main():
     missing_files = validate_capsule_inputs(required_input_elements)
 
     if len(missing_files):
-        msg = "We miss the following files in the " f"capsule input: {missing_files}"
+        msg = f"We miss the following files in the capsule input: {missing_files}"
         raise ValueError(msg)
 
     data_description_path = data_folder.joinpath("data_description.json")
@@ -204,7 +207,6 @@ def main():
 
         data_processes = []
         for i, channel_config_path in enumerate(channel_config_paths):
-
             channel_path = channel_config_path
             channel_name = channel_path.stem
 
@@ -271,10 +273,8 @@ def main():
             shading_correction_per_slide = {}
             for slice_idx in range(len(slices)):
                 curr_slices = slices[slice_idx]
-                shading_correction_per_slide[slice_idx] = (
-                    flatfield_estimation.shading_correction(
-                        slides=curr_slices, shading_parameters=shading_parameters
-                    )
+                shading_correction_per_slide[slice_idx] = flatfield_estimation.shading_correction(
+                    slides=curr_slices, shading_parameters=shading_parameters
                 )
 
             upsample_scale = SCALE * 2
@@ -296,9 +296,7 @@ def main():
             output_flats = []
             for side in laser_side.keys():
                 flat_name = str(
-                    results_folder.joinpath(
-                        f"estimated_flat_laser_{channel_name}_side_{side}.tif"
-                    )
+                    results_folder.joinpath(f"estimated_flat_laser_{channel_name}_side_{side}.tif")
                 )
                 output_flats.append(flat_name)
 

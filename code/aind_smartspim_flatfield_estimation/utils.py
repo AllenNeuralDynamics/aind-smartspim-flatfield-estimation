@@ -17,9 +17,12 @@ import dask.array as da
 import numpy as np
 import psutil
 from aind_data_schema.components.identifiers import Code
-from aind_data_schema.core.processing import (DataProcess, Processing,
-                                               ResourceTimestamped,
-                                               ResourceUsage)
+from aind_data_schema.core.processing import (
+    DataProcess,
+    Processing,
+    ResourceTimestamped,
+    ResourceUsage,
+)
 from aind_data_schema_models.units import MemoryUnit
 from natsort import natsorted
 
@@ -50,7 +53,7 @@ def get_code_ocean_cpu_limit():
 
         container_cpus = cfs_quota_us // cfs_period_us
 
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         container_cpus = 0
 
     # For physical machine, the `cfs_quota_us` could be '-1'
@@ -88,9 +91,7 @@ def read_json_as_dict(filepath: str) -> dict:
     return dictionary
 
 
-def pick_slices(
-    image_stack: np.array, percentage: float, read_lazy: Optional[bool] = True
-):
+def pick_slices(image_stack: np.array, percentage: float, read_lazy: Optional[bool] = True):
     """
     Pick slices from a 3D image stack based on a given percentage.
 
@@ -183,7 +184,6 @@ def get_col_rows_per_laser(metadata_json_path: str):
             tile_config = list(tile_config.values())
 
         for config in tile_config:
-
             if config["Side"] not in laser_side:
                 laser_side[config["Side"]] = set()
 

@@ -178,9 +178,7 @@ class TestCreateMedianFlatfield(unittest.TestCase):
 
 
 class TestEstimateFlatsPerLaser(unittest.TestCase):
-    @patch(
-        "aind_smartspim_flatfield_estimation.flatfield_estimation.shading_correction"
-    )
+    @patch("aind_smartspim_flatfield_estimation.flatfield_estimation.shading_correction")
     def test_keys_match_tiles_per_side(self, mock_sc):
         mock_sc.return_value = {
             "flatfield": np.ones((5, 5)),

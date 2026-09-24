@@ -122,8 +122,7 @@ def flatfield_correction(
     # Applying flatfield (guard against division by zero where flatfield == 0)
     safe_flatfield = np.where(flatfield > 0, flatfield, 1)
     corrected_tiles = (
-        np.where(flatfield > 0, image_tiles / safe_flatfield, 0)
-        - baseline[baseline_indxs]
+        np.where(flatfield > 0, image_tiles / safe_flatfield, 0) - baseline[baseline_indxs]
     )
 
     # Converting back to uint16
@@ -202,10 +201,7 @@ def estimate_flats_per_laser(tiles_per_side, shading_params):
 
     flats = {key: None for key in tiles_per_side.keys()}
     for side, tiles in tiles_per_side.items():
-
-        flats[side] = shading_correction(
-            slides=tiles, shading_parameters=shading_params
-        )
+        flats[side] = shading_correction(slides=tiles, shading_parameters=shading_params)
 
     return flats
 

@@ -1,5 +1,7 @@
 # aind-smartspim-flatfield-estimation
 
+![support](https://img.shields.io/badge/support-supported-brightgreen)
+
 Retrospective flatfield estimation for SmartSPIM light-sheet microscopy data. When the microscope does not supply a measured flatfield, this pipeline estimates one from the acquired tiles using [BaSiCPy](https://github.com/peng-lab/BaSiCPy) and applies the correction to large-scale Zarr datasets.
 
 A separate flatfield is computed per laser channel because each laser can have a different illumination profile at acquisition time. For datasets with two illumination sides (left / right hemisphere), a per-hemisphere flatfield is also computed.

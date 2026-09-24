@@ -14,6 +14,7 @@ import numpy as np
 
 sys.path.append("../")
 
+
 # ---------------------------------------------------------------------------
 # Stub optional heavy dependencies that may not be installed in all envs.
 # These must be in sys.modules BEFORE utils.py is imported so that top-level
@@ -38,9 +39,7 @@ def _setup_missing_modules():
         _da.stack = lambda arrays, **kw: np.stack(arrays)
         _da.squeeze = lambda x, **kw: np.squeeze(np.asarray(x)).view(_DaskProxy)
         _da.zeros = lambda shape, **kw: np.zeros(shape).view(_DaskProxy)
-        _da.from_zarr = MagicMock(
-            return_value=np.zeros((1, 1, 1, 20, 20)).view(_DaskProxy)
-        )
+        _da.from_zarr = MagicMock(return_value=np.zeros((1, 1, 1, 20, 20)).view(_DaskProxy))
         _dask = MagicMock()
         _dask.array = _da  # must be set so `import dask.array as da` resolves correctly
         sys.modules.setdefault("dask", _dask)
@@ -89,6 +88,7 @@ def _setup_missing_modules():
     ):
         try:
             import importlib
+
             _loaded = importlib.import_module(_mod)
             # Verify v2.8.0-specific symbols are present; if not, treat as unavailable
             for _sym in _V2_SYMBOLS.get(_mod, []):
@@ -106,7 +106,6 @@ _setup_missing_modules()
 
 # Re-import dask.array after stubs are in place
 import dask.array as da  # noqa: E402
-
 from aind_smartspim_flatfield_estimation.utils import (  # noqa: E402
     ResourceMonitor,
     create_folder,
@@ -393,9 +392,7 @@ class TestGetSlicerPerSideSetLookup(unittest.TestCase):
 
     @patch("aind_smartspim_flatfield_estimation.utils.get_brain_slices")
     @patch("aind_smartspim_flatfield_estimation.utils.Path.glob")
-    def test_correct_assignment_with_set_lookups(
-        self, mock_glob, mock_get_brain_slices
-    ):
+    def test_correct_assignment_with_set_lookups(self, mock_glob, mock_get_brain_slices):
         tiles_per_laser = {"0": ["A_1", "B_2"], "1": ["C_3"]}
 
         mock_folders = [
@@ -408,8 +405,7 @@ class TestGetSlicerPerSideSetLookup(unittest.TestCase):
         mock_names = ["A_1.zarr", "C_3.zarr"]
         mock_get_brain_slices.return_value = (mock_slices, mock_names)
 
-        from aind_smartspim_flatfield_estimation.utils import \
-            get_slicer_per_side
+        from aind_smartspim_flatfield_estimation.utils import get_slicer_per_side
 
         result = get_slicer_per_side(tiles_per_laser, "/mock/path", indices=[0])
 
@@ -426,8 +422,7 @@ class TestGetSlicerPerSideSetLookup(unittest.TestCase):
             ["X_9.zarr"],
         )
 
-        from aind_smartspim_flatfield_estimation.utils import \
-            get_slicer_per_side
+        from aind_smartspim_flatfield_estimation.utils import get_slicer_per_side
 
         with self.assertRaises(ValueError):
             get_slicer_per_side(tiles_per_laser, "/mock/path", indices=[0])

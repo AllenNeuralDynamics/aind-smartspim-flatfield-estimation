@@ -16,5 +16,5 @@ __maintainers__ = ["Camilo Laiton"]
 __maintainer_emails__ = ["camilo.laiton@alleninstitute.org"]
 __title__ = "aind-smartspim-flatfield-estimation"
 __status__ = "Production"  # 'Production', 'Beta'
-__pipeline_version__ = "5.0.0"
+__pipeline_version__ = "6.0.0"
 __pipeline_name__ = "SmartSPIM Pipeline"

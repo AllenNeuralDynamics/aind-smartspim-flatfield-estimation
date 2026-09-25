@@ -13,12 +13,8 @@ import numpy as np
 sys.modules.setdefault("basicpy", MagicMock())
 
 from aind_smartspim_flatfield_estimation.flatfield_estimation import (  # noqa: E402
-    create_median_flatfield,
-    estimate_flats_per_laser,
-    flatfield_correction,
-    shading_correction,
-    unify_fields,
-)
+    create_median_flatfield, estimate_flats_per_laser, flatfield_correction,
+    shading_correction, unify_fields)
 
 
 class TestShadingCorrection(unittest.TestCase):
@@ -178,7 +174,9 @@ class TestCreateMedianFlatfield(unittest.TestCase):
 
 
 class TestEstimateFlatsPerLaser(unittest.TestCase):
-    @patch("aind_smartspim_flatfield_estimation.flatfield_estimation.shading_correction")
+    @patch(
+        "aind_smartspim_flatfield_estimation.flatfield_estimation.shading_correction"
+    )
     def test_keys_match_tiles_per_side(self, mock_sc):
         mock_sc.return_value = {
             "flatfield": np.ones((5, 5)),

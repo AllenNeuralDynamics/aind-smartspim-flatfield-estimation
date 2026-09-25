@@ -14,16 +14,14 @@ import dask.array as da
 import numpy as np
 import tifffile as tif
 from aind_data_schema.components.identifiers import Code
-from aind_data_schema.core.processing import DataProcess, ProcessName, ProcessStage
+from aind_data_schema.core.processing import (DataProcess, ProcessName,
+                                              ProcessStage)
 from aind_smartspim_flatfield_estimation import flatfield_estimation, utils
-from aind_smartspim_flatfield_estimation.__init__ import (
-    __maintainers__,
-    __pipeline_name__,
-    __pipeline_version__,
-    __title__,
-    __url__,
-    __version__,
-)
+from aind_smartspim_flatfield_estimation.__init__ import (__maintainers__,
+                                                          __pipeline_name__,
+                                                          __pipeline_version__,
+                                                          __title__, __url__,
+                                                          __version__)
 from log_schema import setup_logging
 from natsort import natsorted
 from skimage.transform import resize
@@ -184,7 +182,9 @@ def main():
         channel_config_paths = list(data_folder.glob("preprocess_*.json"))
 
         if not channel_config_paths:
-            logger.warning("No preprocess_*.json configs found, searching for Ex_*_Em_* configs...")
+            logger.warning(
+                "No preprocess_*.json configs found, searching for Ex_*_Em_* configs..."
+            )
             channel_config_paths = list(data_folder.glob("Ex_*_Em_*"))
 
         if not channel_config_paths:
@@ -202,7 +202,8 @@ def main():
         logger.debug(f"Laser sides: {laser_side}")
 
         save_dict_as_json(
-            filename=str(results_folder.joinpath("laser_tiles.json")), dictionary=laser_side
+            filename=str(results_folder.joinpath("laser_tiles.json")),
+            dictionary=laser_side,
         )
 
         data_processes = []
@@ -273,14 +274,18 @@ def main():
             shading_correction_per_slide = {}
             for slice_idx in range(len(slices)):
                 curr_slices = slices[slice_idx]
-                shading_correction_per_slide[slice_idx] = flatfield_estimation.shading_correction(
-                    slides=curr_slices, shading_parameters=shading_parameters
+                shading_correction_per_slide[slice_idx] = (
+                    flatfield_estimation.shading_correction(
+                        slides=curr_slices, shading_parameters=shading_parameters
+                    )
                 )
 
             upsample_scale = SCALE * 2
 
             flatfield, _, _ = compute_unified_flatfield(shading_correction_per_slide)
-            logger.debug(f"Unified flatfield computed for lasers: {list(laser_side.keys())}")
+            logger.debug(
+                f"Unified flatfield computed for lasers: {list(laser_side.keys())}"
+            )
 
             upsample_shape = tuple(upsample_scale * np.array(flatfield.shape))
             upsampled_flatfield = resize(
@@ -296,7 +301,9 @@ def main():
             output_flats = []
             for side in laser_side.keys():
                 flat_name = str(
-                    results_folder.joinpath(f"estimated_flat_laser_{channel_name}_side_{side}.tif")
+                    results_folder.joinpath(
+                        f"estimated_flat_laser_{channel_name}_side_{side}.tif"
+                    )
                 )
                 output_flats.append(flat_name)
 
@@ -326,7 +333,9 @@ def main():
                         "shading_parameters": shading_parameters,
                         "duration_seconds": (end_time - start_time).total_seconds(),
                     },
-                    resources=resource_monitor.to_resource_usage(cpu_cores=int(cpu_count)),
+                    resources=resource_monitor.to_resource_usage(
+                        cpu_cores=int(cpu_count)
+                    ),
                     notes=f"Flatfield estimation for channel {channel_name}",
                 )
             )

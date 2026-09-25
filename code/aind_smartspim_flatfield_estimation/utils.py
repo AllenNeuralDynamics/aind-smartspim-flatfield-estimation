@@ -17,12 +17,9 @@ import dask.array as da
 import numpy as np
 import psutil
 from aind_data_schema.components.identifiers import Code
-from aind_data_schema.core.processing import (
-    DataProcess,
-    Processing,
-    ResourceTimestamped,
-    ResourceUsage,
-)
+from aind_data_schema.core.processing import (DataProcess, Processing,
+                                              ResourceTimestamped,
+                                              ResourceUsage)
 from aind_data_schema_models.units import MemoryUnit
 from natsort import natsorted
 
@@ -91,7 +88,9 @@ def read_json_as_dict(filepath: str) -> dict:
     return dictionary
 
 
-def pick_slices(image_stack: np.array, percentage: float, read_lazy: Optional[bool] = True):
+def pick_slices(
+    image_stack: np.array, percentage: float, read_lazy: Optional[bool] = True
+):
     """
     Pick slices from a 3D image stack based on a given percentage.
 
@@ -403,10 +402,14 @@ class ResourceMonitor:
         while not self._stop_event.is_set():
             now = datetime.now(timezone.utc)
             self._cpu_usage.append(
-                ResourceTimestamped(timestamp=now, usage=psutil.cpu_percent(interval=None))
+                ResourceTimestamped(
+                    timestamp=now, usage=psutil.cpu_percent(interval=None)
+                )
             )
             self._ram_usage.append(
-                ResourceTimestamped(timestamp=now, usage=psutil.virtual_memory().percent)
+                ResourceTimestamped(
+                    timestamp=now, usage=psutil.virtual_memory().percent
+                )
             )
             self._stop_event.wait(self._interval)
 

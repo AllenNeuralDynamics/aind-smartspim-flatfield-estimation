@@ -2,8 +2,12 @@
 Utilities module
 """
 
+import errno
 import json
 import os
+import platform
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
@@ -12,8 +16,11 @@ import boto3
 import dask.array as da
 import numpy as np
 import psutil
-from aind_data_schema.core.processing import (DataProcess, PipelineProcess,
-                                              Processing)
+from aind_data_schema.components.identifiers import Code
+from aind_data_schema.core.processing import (DataProcess, Processing,
+                                              ResourceTimestamped,
+                                              ResourceUsage)
+from aind_data_schema_models.units import MemoryUnit
 from natsort import natsorted
 
 
@@ -31,7 +38,7 @@ def get_code_ocean_cpu_limit():
     aws_batch_job_id = os.environ.get("AWS_BATCH_JOB_ID")
 
     if co_cpus:
-        return co_cpus
+        return int(co_cpus)
     if aws_batch_job_id:
         return 1
 
@@ -43,7 +50,7 @@ def get_code_ocean_cpu_limit():
 
         container_cpus = cfs_quota_us // cfs_period_us
 
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         container_cpus = 0
 
     # For physical machine, the `cfs_quota_us` could be '-1'
@@ -118,10 +125,13 @@ def pick_slices(
     end_slice = z_dim - start_slice + 1
     slices = list(range(start_slice, end_slice, step_size))
 
-    picked_slices = None
     if read_lazy:
-        picked_slices = [image_stack[i] for i in slices]
-        picked_slices = da.stack(picked_slices)
+        picked_slices = da.stack([image_stack[i] for i in slices])
+    else:
+        if hasattr(image_stack, "compute"):
+            picked_slices = np.stack([image_stack[i].compute() for i in slices])
+        else:
+            picked_slices = np.stack([np.asarray(image_stack[i]) for i in slices])
 
     return picked_slices, slices
 
@@ -161,19 +171,18 @@ def get_col_rows_per_laser(metadata_json_path: str):
         raise FileNotFoundError(f"{metadata_json_path} does not exists.")
 
     laser_side = {"0": set(), "1": set()}
-    matadata_json = read_json_as_dict(metadata_json_path)
-    tile_config = matadata_json.get("tile_config")
-    
+    metadata_json = read_json_as_dict(metadata_json_path)
+    tile_config = metadata_json.get("tile_config")
+
     # Fix to the new microscope metadata json
     if tile_config is None:
-        tile_config = matadata_json.get("tiles")
+        tile_config = metadata_json.get("tiles")
 
     if metadata_json_path.exists() and tile_config is not None:
         if isinstance(tile_config, dict):
             tile_config = list(tile_config.values())
 
         for config in tile_config:
-
             if config["Side"] not in laser_side:
                 laser_side[config["Side"]] = set()
 
@@ -288,6 +297,7 @@ def get_slicer_per_side(
 
     channel_path = Path(channel_path)
     data_per_laser = {k: [] for k in tiles_per_laser.keys()}
+    laser_sets = {side: set(tiles) for side, tiles in tiles_per_laser.items()}
     cols = set()
     rows = set()
 
@@ -317,10 +327,10 @@ def get_slicer_per_side(
 
             curr_nm = curr_nm.replace(".zarr", "")
 
-            if curr_nm in tiles_per_laser["0"]:
+            if curr_nm in laser_sets["0"]:
                 data_per_laser["0"].append(curr_slc)
 
-            elif curr_nm in tiles_per_laser["1"]:
+            elif curr_nm in laser_sets["1"]:
                 data_per_laser["1"].append(curr_slc)
 
             else:
@@ -359,15 +369,104 @@ def create_folder(dest_dir, verbose: Optional[bool] = False) -> None:
                 print(f"Creating new directory: {dest_dir}")
             os.makedirs(dest_dir)
         except OSError as e:
-            if e.errno != os.errno.EEXIST:
+            if e.errno != errno.EEXIST:
                 raise
+
+
+class ResourceMonitor:
+    """
+    Background sampler for CPU and RAM usage during a processing step.
+
+    Samples are collected on a separate thread at a fixed interval and can be
+    turned into an `aind_data_schema.core.processing.ResourceUsage` once the
+    step is finished.
+    """
+
+    def __init__(self, interval_seconds: Optional[float] = 1.0):
+        """
+        Initializes the ResourceMonitor.
+        Parameters
+        ----------
+        interval_seconds: Optional[float]
+            Time interval in seconds between resource usage samples. Default is 1 second.
+        """
+        self._interval = interval_seconds
+        self._cpu_usage = []
+        self._ram_usage = []
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self) -> None:
+        """Background thread method for sampling CPU and RAM usage."""
+
+        while not self._stop_event.is_set():
+            now = datetime.now(timezone.utc)
+            self._cpu_usage.append(
+                ResourceTimestamped(
+                    timestamp=now, usage=psutil.cpu_percent(interval=None)
+                )
+            )
+            self._ram_usage.append(
+                ResourceTimestamped(
+                    timestamp=now, usage=psutil.virtual_memory().percent
+                )
+            )
+            self._stop_event.wait(self._interval)
+
+    def start(self) -> "ResourceMonitor":
+        """Starts the background sampling thread."""
+        psutil.cpu_percent(interval=None)  # discard first call, which always reads 0
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        """Stops the background sampling thread."""
+        self._stop_event.set()
+        self._thread.join(timeout=self._interval + 1)
+
+    def __enter__(self) -> "ResourceMonitor":
+        """Context manager entry point to start resource monitoring."""
+        return self.start()
+
+    def __exit__(self, *exc_info) -> None:
+        """Context manager exit point to stop resource monitoring."""
+        self.stop()
+
+    def to_resource_usage(self, cpu_cores: Optional[int] = None):
+        """
+        Builds an `aind_data_schema.core.processing.ResourceUsage` from the
+        samples collected so far, plus static host information.
+
+        Parameters
+        ----------
+        cpu_cores: Optional[int]
+            Number of CPU cores available to the process.
+
+        Returns
+        -------
+        ResourceUsage
+            Resource usage record for a `DataProcess`.
+        """
+
+        return ResourceUsage(
+            os=platform.system(),
+            architecture=platform.machine(),
+            cpu_cores=cpu_cores,
+            system_memory=round(psutil.virtual_memory().total / (1024**3), 2),
+            system_memory_unit=MemoryUnit.GB,
+            ram=round(psutil.virtual_memory().total / (1024**3), 2),
+            ram_unit=MemoryUnit.GB,
+            cpu_usage=self._cpu_usage,
+            ram_usage=self._ram_usage,
+        )
 
 
 def generate_processing(
     data_processes: List[DataProcess],
     dest_processing: str,
-    processor_full_name: str,
+    pipeline_name: str,
     pipeline_version: str,
+    pipeline_url: str,
 ):
     """
     Generates data description for the output folder.
@@ -375,31 +474,35 @@ def generate_processing(
     Parameters
     ------------------------
 
-    data_processes: List[dict]
+    data_processes: List[DataProcess]
         List with the processes aplied in the pipeline.
 
     dest_processing: PathLike
         Path where the processing file will be placed.
 
-    processor_full_name: str
-        Person in charged of running the pipeline
-        for this data asset
+    pipeline_name: str
+        Name of the overall pipeline this processing
+        step belongs to.
 
     pipeline_version: str
-        Terastitcher pipeline version
+        Version of the overall pipeline.
+
+    pipeline_url: str
+        URL of the overall pipeline's repository.
 
     """
     # flake8: noqa: E501
-    processing_pipeline = PipelineProcess(
-        data_processes=data_processes,
-        processor_full_name=processor_full_name,
-        pipeline_version=pipeline_version,
-        pipeline_url="https://github.com/AllenNeuralDynamics/aind-smartspim-pipeline",
-        note="Metadata for fusion step",
-    )
+    pipelines = [
+        Code(
+            url=pipeline_url,
+            name=pipeline_name,
+            version=pipeline_version,
+        )
+    ]
 
-    processing = Processing(
-        processing_pipeline=processing_pipeline,
+    processing = Processing.create_with_sequential_process_graph(
+        data_processes=data_processes,
+        pipelines=pipelines,
         notes="This processing only contains metadata about flatfields \
             and needs to be compiled with other steps at the end",
     )

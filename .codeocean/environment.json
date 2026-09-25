@@ -1,0 +1,9 @@
+{
+	"version": 1,
+	"base_image": "codeocean/aind-smartspim-flatfield-estimation:si-0.0.4",
+	"options": {
+		"registry_host_arg": true,
+		"git_ask_pass": true,
+		"mount_secrets": true
+	}
+}

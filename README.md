@@ -2,34 +2,46 @@
 
 ![support](https://img.shields.io/badge/support-supported-brightgreen)
 
-Retrospective flatfield estimation for SmartSPIM light-sheet microscopy data. When the microscope does not supply a measured flatfield, this pipeline estimates one from the acquired tiles using [BaSiCPy](https://github.com/peng-lab/BaSiCPy) and applies the correction to large-scale Zarr datasets.
+Retrospective flatfield estimation for SmartSPIM light-sheet microscopy data. When the microscope does not supply a measured flatfield, this capsule estimates one from the acquired tiles.
 
-A separate flatfield is computed per laser channel because each laser can have a different illumination profile at acquisition time. For datasets with two illumination sides (left / right hemisphere), a per-hemisphere flatfield is also computed.
+The estimation itself is done by the [aind-flatfield-correction](https://github.com/AllenNeuralDynamics/aind-flatfield-correction) package (BaSiCPy based). This repository only does the SmartSPIM specific work: it reads the capsule inputs, calls the package for each channel, writes the flatfield files that the SmartSPIM destripe capsule reads, and writes the AIND processing metadata.
+
+A separate flatfield is computed for each channel (laser). One flatfield file is written per channel and is used for the tiles of both brain sides.
 
 ---
 
 ## How it works
 
 ```
-Zarr tiles on disk or S3
-        │
-        ▼
-  Pick representative Z-slices (20 %–80 % of stack, configurable %)
-        │
-        ▼
-  BaSiCPy fit  →  flatfield + darkfield + baseline  (per slide)
-        │
-        ▼
-  unify across slides  →  single flatfield per laser
-        │
-        ▼
-  Bicubic upsample to full resolution
-        │
-        ▼
-  Save estimated_flat_laser_<channel>_side_<side>.tif
+preprocess_<channel>.json ──► channel folder (s3://.../<channel> or local)
+                                   │
+derivatives/DarkMaster_cropped.tif ┤
+                                   ▼
+        aind-flatfield-correction (joint fit + parameter search)
+        - tiles at pyramid level 2, darkfield subtracted before the fit
+        - search for smoothness_flatfield (mandatory)
+        - plausibility check, validation figures
+                                   │
+                                   ▼
+        flatfield_<channel>_level0.npy + flatfield_<channel>.json
+                                   │
+                  ┌────────────────┴────────────────┐
+                  ▼                                 ▼
+   estimated_flat_laser_<channel>.tif            metadata/processing.json
 ```
 
-**Optional stripe removal** (`filter_stripes`) can be applied before flatfield correction. It uses wavelet decomposition + FFT Gaussian filtering to suppress horizontal banding artifacts common in light-sheet data.
+The flatfield is estimated on the raw (not destriped) tiles. The destripe capsule applies it after destriping.
+
+### When the capsule fails
+
+The capsule writes all its outputs first. Then it raises an error, so you can inspect the results. It raises:
+
+| Error | Cause |
+|---|---|
+| `SuspiciousFlatfieldError` | The package plausibility check failed for at least one channel (flat is a no-op, has non-finite values, or is out of range). The reasons are in `processing.json` notes and in the package sidecar json. |
+| `SearchSkippedError` | The package did not run the parameter search (`over_budget` or `all_candidates_failed`). The search is mandatory. |
+
+Every channel runs before the error is raised.
 
 ---
 
@@ -40,33 +52,28 @@ aind-smartspim-flatfield-estimation/
 ├── code/
 │   ├── run_capsule.py                          # Entry point (Code Ocean capsule)
 │   ├── aind_smartspim_flatfield_estimation/
-│   │   ├── flatfield_estimation.py             # BaSiCPy fitting, correction, unification
-│   │   ├── filtering.py                        # Stripe removal, normalization, hemisphere routing
-│   │   └── utils.py                            # I/O helpers, slice picking, S3 utilities
+│   │   ├── estimation.py                       # Package arguments, sidecar report, flatfield tifs, errors
+│   │   └── utils.py                            # Metadata, folders, resource monitor, processing.json
 │   └── tests/
-│       ├── test_flatfield_estimation.py
-│       ├── test_filtering.py
+│       ├── test_estimation.py
+│       ├── test_run_capsule.py
 │       └── test_utils.py
 └── environment/
-    └── Dockerfile                              # Production container definition
+    └── Dockerfile_local                        # Container definition
 ```
 
 ---
 
 ## Requirements
 
+Python 3.10 or 3.11. The estimation dependencies (BaSiCPy, jax, numpy, zarr, dask, boto3) are pinned by `aind-flatfield-correction`. This repository adds:
+
 | Package | Version |
 |---------|---------|
-| Python | 3.10 |
-| numpy | 1.24.2 |
-| BaSiCPy | 1.1.0 |
-| jax / jaxlib | 0.4.23 |
-| dask[distributed] | latest |
-| zarr | 2.18.2 |
-| PyWavelets | 1.6.0 |
-| natsort | 8.4.0 |
+| aind-flatfield-correction | pinned git commit (see `pyproject.toml`) |
 | aind-data-schema | 2.8.0 |
-| boto3 / s3fs | latest |
+| aind-data-schema-models | >=5.7.1,<6 |
+| log-schema | 0.2.10.dev1 |
 
 ---
 
@@ -98,6 +105,7 @@ The pipeline is designed to run as a Code Ocean capsule. Place the following fil
 |------|-------------|
 | `metadata.json` | Tile configuration (X/Y positions, laser sides) |
 | `data_description.json` | Dataset metadata |
+| `derivatives/DarkMaster_cropped.tif` | Microscope darkfield. The destripe capsule subtracts the same file. |
 | `preprocess_<channel>.json` | Per-channel config with `input_data` and `channel` keys |
 
 Then execute:
@@ -110,12 +118,19 @@ Results are written to `/results/`:
 
 ```
 results/
-├── estimated_flat_laser_<channel>_side_0.tif
-├── estimated_flat_laser_<channel>_side_1.tif
-├── laser_tiles.json          # tile-to-side mapping
+├── estimated_flat_laser_<channel>.tif            # read by the destripe capsule
+├── laser_tiles.json                              # tile-to-side mapping
+├── flatfield_estimation/<channel>/               # package products
+│   ├── flatfield_<channel>.npy / _level0.npy
+│   ├── darkfield_<channel>.npy / _level0.npy
+│   ├── flatfield_<channel>.json                  # parameters, search report, guard verdict, provenance
+│   ├── metadata/estimation.log
+│   └── <channel>/*.png                           # validation figures (always written)
 └── metadata/
-    └── processing.json       # AIND provenance record
+    └── processing.json                           # AIND provenance record
 ```
+
+Review the validation figures before you use a flatfield on a whole dataset.
 
 ### Local / S3 usage
 
@@ -130,60 +145,49 @@ results/
 
 For local data, set `input_data` to an absolute directory path containing `<col>_<row>.zarr` folders.
 
+> **Note:** The package lists S3 tiles with an unsigned client. S3 input must be in a public bucket.
+
 ---
 
 ## Key parameters
 
-These are set in `run_capsule.py` and can be tuned per dataset:
+These are constants in `estimation.py`:
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `z_step_percentage` | `0.3` | Fraction of Z-planes sampled for fitting (avoids blank top/bottom slices) |
-| `SCALE` | `2` | Zarr multiscale level used during fitting (lower = faster, coarser) |
-| `smoothness_flatfield` | `1.0` | BaSiCPy flatfield smoothness regularisation |
-| `smoothness_darkfield` | `20` | BaSiCPy darkfield smoothness regularisation |
-| `max_reweight_iterations` | `35` | BaSiCPy optimisation iterations |
-| `get_darkfield` | `False` | Whether BaSiCPy estimates a darkfield component |
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `PYRAMID_LEVEL` | `2` | Zarr multiscale level used for the fit |
+| `TILE_PATTERN` | `\.zarr$` | Entries in the channel folder that are tiles |
+| `SEARCH_BUDGET_MINUTES` | `480` | `--max-search-minutes`. The package skips the search if the projected cost is more than half of this. |
+
+The package defaults are used for everything else (joint fit, `ladmap` solver, 2000 planes in total across all tiles). See the package README for its options.
 
 ---
 
 ## Public API
 
-### `flatfield_estimation.py`
+### `estimation.py`
 
 ```python
-shading_correction(slides, shading_parameters, mask=None)
+build_estimate_argv(channel_path, darkfield_path, output_folder, output_name, pyramid_level=2, validate=True)
 ```
-Fits BaSiCPy on a list of 2-D image slices. Returns `{"flatfield", "darkfield", "baseline"}`.
+Builds the package command-line arguments. `--validate` is on by default. `--skip-search` is never added.
 
 ```python
-flatfield_correction(image_tiles, flatfield, darkfield, baseline=None)
+run_estimate(argv)
 ```
-Applies darkfield subtraction and flatfield division to a batch of tiles. Zero-valued flatfield pixels are handled safely (output clamped to 0). Returns `uint16` array.
-
-### `filtering.py`
+Runs the package estimation.
 
 ```python
-log_space_fft_filtering(input_image, wavelet="db3", level=0, sigma=64, max_threshold=4)
+read_estimation_report(sidecar_path)
 ```
-Removes horizontal stripes via log-space wavelet decomposition + FFT Gaussian filtering. Correctly inverts the log transform as `exp(y) - 1`.
+Reads the package sidecar and returns the plausibility verdict and the search verdict.
 
 ```python
-normalize_image(images)
+write_flat(flatfield_path, channel_name, results_folder)
 ```
-Normalises a batch of images to `[1.0, 2.0]`. Returns `float32`. Handles constant-valued batches without division-by-zero.
-
-```python
-filter_stripes(image, input_tile_path, no_cells_config, cells_config, shadow_correction=None)
-```
-Detects whether a tile contains cells and applies the appropriate stripe-removal configuration. Optionally applies retrospective or prospective flatfield correction.
+Writes `estimated_flat_laser_<channel>.tif` (float32), one file per channel.
 
 ### `utils.py`
-
-```python
-pick_slices(image_stack, percentage, read_lazy=True)
-```
-Samples a fixed percentage of Z-slices from the central 60 % of the stack. Returns slices as a Dask array (`read_lazy=True`) or NumPy array (`read_lazy=False`).
 
 ```python
 get_col_rows_per_laser(metadata_json_path)
@@ -191,9 +195,9 @@ get_col_rows_per_laser(metadata_json_path)
 Parses a SmartSPIM metadata JSON and returns `{"0": [col_row, ...], "1": [...]}` mapping each laser side to its tile identifiers.
 
 ```python
-get_slicer_per_side(tiles_per_laser, channel_path, indices, scale=2)
+ResourceMonitor, generate_processing, read_json_as_dict, create_folder
 ```
-Loads image slices for the requested Z-indices and groups them by laser side.
+Helpers for the AIND processing record and file handling.
 
 ---
 
@@ -218,7 +222,7 @@ black .
 isort .
 ```
 
-> Tests stub out optional heavy dependencies (`basicpy`, `dask`, `psutil`, etc.) via `sys.modules` so the suite runs in environments that only have NumPy, SciPy, PyWavelets, and scikit-image.
+> The tests do not run the package estimation. They replace it with a fake that writes the same files. The suite needs `aind-data-schema`, `aind-data-schema-models`, `numpy`, `tifffile`, `psutil` and the `aind_flatfield_correction.core.basicpy.config` module. `log_schema` is stubbed.
 
 ### Pull requests
 

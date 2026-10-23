@@ -13,6 +13,14 @@ authors = [
 classifiers = [
     "Programming Language :: Python :: 3"
 ]
+dependencies = [
+    "aind-flatfield-correction @ git+https://github.com/AllenNeuralDynamics/aind-flatfield-correction.git@6bb59440217471d7f326db4997c06d5d841e85e1",
+    "aind-data-schema==2.8.0",
+    "aind-data-schema-models>=5.7.1,<6",
+    "log-schema==0.2.10.dev1",
+    "psutil",
+    "tifffile",
+]
 dynamic = ["version", "readme"]
 
 [project.optional-dependencies]
@@ -32,6 +40,7 @@ readme = {file = ["README.md"]}
 
 [tool.pytest.ini_options]
 testpaths = ["code/tests"]
+pythonpath = ["code"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

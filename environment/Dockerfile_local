@@ -3,30 +3,20 @@ FROM continuumio/miniconda3:23.9.0-0 as builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
+# Install system dependencies (git is needed to install the packages from GitHub)
 RUN apt-get update && \
-    apt-get install -y gcc && \
+    apt-get install -y gcc git && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Create conda environment and install dependencies
+# Create conda environment and install dependencies.
+# aind-flatfield-correction brings BaSiCPy, jax, numpy, zarr, dask, boto3 and
+# the other estimation dependencies with its own pins.
 RUN conda create -y -n flatfield_estimation python=3.10 && \
     /opt/conda/envs/flatfield_estimation/bin/pip install --no-cache-dir \
+        "aind-flatfield-correction @ git+https://github.com/AllenNeuralDynamics/aind-flatfield-correction.git@6bb59440217471d7f326db4997c06d5d841e85e1" \
         aind-data-schema==2.8.0 \
         "aind-data-schema-models>=5.7.1,<6" \
-        dask[distributed] \
-        numpy==1.24.2 \
-        BaSiCPy==1.1.0 \
-        jax==0.4.23 \
-        jaxlib==0.4.23 \
-        zarr==2.18.2 \
-        matplotlib \
-        natsort==8.4.0 \
-        PyWavelets==1.6.0 \
-        log-schema==0.2.10.dev1 \
-        hyperactive==4.6.0 \
-        "gradient-free-optimizers<1.9.0" \
-        boto3 \
-        s3fs && \
+        log-schema==0.2.10.dev1 && \
     conda clean --all --yes
 
 # ----------- runtime Stage ----------- #
@@ -35,7 +25,7 @@ FROM continuumio/miniconda3:23.9.0-0
 LABEL maintainer="Camilo Laiton <camilo.laiton@alleninstitute.org>" \
     org.opencontainers.image.title="Flatfield Estimation" \
     org.opencontainers.image.description="Container for flatfield estimation using BaSiCPy and related tools." \
-    org.opencontainers.image.version="0.0.4" \
+    org.opencontainers.image.version="0.1.0" \
     org.opencontainers.image.licenses="MIT"
 
 ARG DEBIAN_FRONTEND=noninteractive

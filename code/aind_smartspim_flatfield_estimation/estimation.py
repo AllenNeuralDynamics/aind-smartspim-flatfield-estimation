@@ -185,48 +185,32 @@ def read_estimation_report(sidecar_path: str) -> EstimationReport:
     )
 
 
-def write_side_flats(
+def write_flat(
     flatfield_path: str,
-    sides: List[str],
     channel_name: str,
     results_folder: str,
-) -> List[str]:
+) -> str:
     """
-    Writes one flatfield tif per brain side. The SmartSPIM destripe
-    capsule reads these files.
+    Writes the flatfield tif of one channel. The SmartSPIM destripe
+    capsule reads this file. One flatfield is used for all the tiles
+    of the channel.
 
     Parameters
     ----------
     flatfield_path: str
         Path to the full-resolution flatfield (.npy) from the package.
-    sides: List[str]
-        Brain sides, for example ["0", "1"].
     channel_name: str
-        Channel name used in the file names.
+        Channel name used in the file name.
     results_folder: str
-        Folder where the tif files are written.
-
-    Raises
-    ------
-    ValueError:
-        If there are no sides.
+        Folder where the tif file is written.
 
     Returns
     -------
-    List[str]
-        Paths of the written files, in the order of the sides.
+    str
+        Path of the written file.
     """
-    if not len(sides):
-        raise ValueError("At least one brain side is needed to write flats.")
-
     flatfield = np.load(flatfield_path).astype(np.float32)
-    output_paths = []
+    output_path = str(Path(results_folder).joinpath(f"estimated_flat_laser_{channel_name}.tif"))
+    tif.imwrite(output_path, flatfield)
 
-    for side in sides:
-        output_path = str(
-            Path(results_folder).joinpath(f"estimated_flat_laser_{channel_name}_side_{side}.tif")
-        )
-        tif.imwrite(output_path, flatfield)
-        output_paths.append(output_path)
-
-    return output_paths
+    return output_path

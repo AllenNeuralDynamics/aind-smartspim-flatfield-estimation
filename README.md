@@ -6,7 +6,7 @@ Retrospective flatfield estimation for SmartSPIM light-sheet microscopy data. Wh
 
 The estimation itself is done by the [aind-flatfield-correction](https://github.com/AllenNeuralDynamics/aind-flatfield-correction) package (BaSiCPy based). This repository only does the SmartSPIM specific work: it reads the capsule inputs, calls the package for each channel, writes the flatfield files that the SmartSPIM destripe capsule reads, and writes the AIND processing metadata.
 
-A separate flatfield is computed for each channel (laser). The same flatfield is written for each brain side.
+A separate flatfield is computed for each channel (laser). One flatfield file is written per channel and is used for the tiles of both brain sides.
 
 ---
 
@@ -27,7 +27,7 @@ derivatives/DarkMaster_cropped.tif ┤
                                    │
                   ┌────────────────┴────────────────┐
                   ▼                                 ▼
-   estimated_flat_laser_<channel>_side_<s>.tif   metadata/processing.json
+   estimated_flat_laser_<channel>.tif            metadata/processing.json
 ```
 
 The flatfield is estimated on the raw (not destriped) tiles. The destripe capsule applies it after destriping.
@@ -118,8 +118,7 @@ Results are written to `/results/`:
 
 ```
 results/
-├── estimated_flat_laser_<channel>_side_0.tif     # read by the destripe capsule
-├── estimated_flat_laser_<channel>_side_1.tif
+├── estimated_flat_laser_<channel>.tif            # read by the destripe capsule
 ├── laser_tiles.json                              # tile-to-side mapping
 ├── flatfield_estimation/<channel>/               # package products
 │   ├── flatfield_<channel>.npy / _level0.npy
@@ -184,9 +183,9 @@ read_estimation_report(sidecar_path)
 Reads the package sidecar and returns the plausibility verdict and the search verdict.
 
 ```python
-write_side_flats(flatfield_path, sides, channel_name, results_folder)
+write_flat(flatfield_path, channel_name, results_folder)
 ```
-Writes `estimated_flat_laser_<channel>_side_<side>.tif` (float32) for each side.
+Writes `estimated_flat_laser_<channel>.tif` (float32), one file per channel.
 
 ### `utils.py`
 

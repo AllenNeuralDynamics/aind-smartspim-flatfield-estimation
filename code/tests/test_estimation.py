@@ -180,41 +180,24 @@ class TestWriteSideFlats(unittest.TestCase):
         """Removes the temporary folder"""
         shutil.rmtree(self.folder, ignore_errors=True)
 
-    def test_one_file_per_side_with_expected_names(self):
-        """Tests the file names that the destripe capsule searches"""
-        paths = estimation.write_side_flats(
-            self.flatfield_path, ["0", "1"], "Ex_488_Em_525", self.folder
-        )
+    def test_one_file_with_the_name_destripe_searches(self):
+        """Tests the file name that the destripe capsule searches"""
+        path = estimation.write_flat(self.flatfield_path, "Ex_488_Em_525", self.folder)
 
+        self.assertEqual(Path(path).name, "estimated_flat_laser_Ex_488_Em_525.tif")
+        self.assertTrue(Path(path).exists())
         self.assertEqual(
-            [Path(path).name for path in paths],
-            [
-                "estimated_flat_laser_Ex_488_Em_525_side_0.tif",
-                "estimated_flat_laser_Ex_488_Em_525_side_1.tif",
-            ],
+            [p.name for p in self.folder.glob("estimated_flat_laser_Ex_488_Em_525*.tif")],
+            ["estimated_flat_laser_Ex_488_Em_525.tif"],
         )
-        for path in paths:
-            self.assertTrue(Path(path).exists())
 
-    def test_files_are_float32_with_the_same_shape(self):
-        """Tests the dtype and shape of the written flatfield"""
-        paths = estimation.write_side_flats(self.flatfield_path, ["0"], "ch", self.folder)
-        written = tif.imread(paths[0])
+    def test_file_is_float32_with_the_same_values(self):
+        """Tests the dtype, shape and values of the written flatfield"""
+        written = tif.imread(estimation.write_flat(self.flatfield_path, "ch", self.folder))
 
         self.assertEqual(written.dtype, np.float32)
         self.assertEqual(written.shape, self.flatfield.shape)
-
-    def test_every_side_gets_the_same_flatfield(self):
-        """Tests that both sides have the same values"""
-        paths = estimation.write_side_flats(self.flatfield_path, ["0", "1"], "ch", self.folder)
-
-        np.testing.assert_array_equal(tif.imread(paths[0]), tif.imread(paths[1]))
-        np.testing.assert_allclose(tif.imread(paths[0]), self.flatfield, rtol=1e-6)
-
-    def test_no_sides_raises(self):
-        """Tests that an empty list of sides raises an error"""
-        with self.assertRaises(ValueError):
-            estimation.write_side_flats(self.flatfield_path, [], "ch", self.folder)
+        np.testing.assert_allclose(written, self.flatfield, rtol=1e-6)
 
 
 class TestErrors(unittest.TestCase):

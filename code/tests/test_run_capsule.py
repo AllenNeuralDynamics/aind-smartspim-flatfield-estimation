@@ -99,9 +99,8 @@ class TestRunEstimation(unittest.TestCase):
 
     def assert_outputs_written(self, channel):
         """Checks the files that the destripe capsule needs"""
-        for side in ("0", "1"):
-            path = self.results.joinpath(f"estimated_flat_laser_{channel}_side_{side}.tif")
-            self.assertTrue(path.exists(), path)
+        flats = list(self.results.glob(f"estimated_flat_laser_{channel}*.tif"))
+        self.assertEqual([p.name for p in flats], [f"estimated_flat_laser_{channel}.tif"])
         self.assertTrue(self.results.joinpath("laser_tiles.json").exists())
         self.assertTrue(self.results.joinpath("metadata", "processing.json").exists())
 

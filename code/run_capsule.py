@@ -8,7 +8,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 from aind_data_schema.components.identifiers import Code
 from aind_data_schema.core.processing import DataProcess, ProcessName, ProcessStage
@@ -109,13 +109,12 @@ def get_channel(channel_config_path: Path) -> Tuple[str, str]:
 def estimate_channel(
     channel_config_path: Path,
     darkfield_path: Path,
-    laser_sides: Dict[str, List[str]],
     results_folder: Path,
     cpu_count: int,
 ) -> Tuple[DataProcess, estimation.EstimationReport, str]:
     """
     Estimates the flatfield of one channel and writes
-    one flatfield tif per brain side.
+    its flatfield tif.
 
     Parameters
     -----------
@@ -124,9 +123,6 @@ def estimate_channel(
 
     darkfield_path: Path
         Path to the microscope darkfield.
-
-    laser_sides: Dict[str, List[str]]
-        Tiles per brain side. The keys are the sides.
 
     results_folder: Path
         Capsule results folder.
@@ -164,9 +160,8 @@ def estimate_channel(
     report = estimation.read_estimation_report(
         estimation_folder.joinpath(f"flatfield_{channel_name}.json")
     )
-    output_flats = estimation.write_side_flats(
+    output_flat = estimation.write_flat(
         flatfield_path=estimation_folder.joinpath(f"flatfield_{channel_name}_level0.npy"),
-        sides=list(laser_sides.keys()),
         channel_name=channel_name,
         results_folder=results_folder,
     )
@@ -188,7 +183,7 @@ def estimate_channel(
         end_date_time=end_time,
         output_path=str(results_folder),
         output_parameters={
-            "flatfield_paths": output_flats,
+            "flatfield_paths": [output_flat],
             "input_location": channel_path,
             "darkfield_path": str(darkfield_path),
             "estimation_folder": str(estimation_folder),
@@ -289,7 +284,6 @@ def run_estimation(data_folder: Path, results_folder: Path) -> None:
         data_process, report, channel_name = estimate_channel(
             channel_config_path=channel_config_path,
             darkfield_path=darkfield_path,
-            laser_sides=laser_sides,
             results_folder=results_folder,
             cpu_count=cpu_count,
         )

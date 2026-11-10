@@ -35,7 +35,7 @@ DEFAULT_DARKFIELD_RELATIVE_PATH = "derivatives/DarkMaster_cropped.tif"
 DEFAULT_PYRAMID_LEVEL = 2
 # Budget of the parameter search PER CALL, that is per channel and laser
 # side (calls run one after the other). The package skips the search
-# when its projected cost is more than half of this (240 min). The
+# when its projected cost is more than half of this (60 min). The
 # search is mandatory here.
 DEFAULT_SEARCH_BUDGET_MINUTES = 120.0
 
@@ -220,7 +220,11 @@ def estimate_channel_side(
     label = f"{channel_name}_side_{side}"
     logger.info(f"Computing flats for channel: {channel_name}, side: {side}")
 
-    estimation_folder = results_folder.joinpath("flatfield_estimation", channel_name)
+    # One folder per side: the package overwrites its run log
+    # (metadata/estimation.log) in the output folder.
+    estimation_folder = results_folder.joinpath(
+        "flatfield_estimation", channel_name, f"side_{side}"
+    )
 
     start_time = datetime.now(timezone.utc)
     resource_monitor = utils.ResourceMonitor(interval_seconds=2.0).start()

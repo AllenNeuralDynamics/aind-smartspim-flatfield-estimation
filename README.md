@@ -119,7 +119,7 @@ Results are written to `/results/`:
 results/
 ├── estimated_flat_laser_<channel>.tif            # read by the destripe capsule
 ├── laser_tiles.json                              # tile-to-side mapping
-├── flatfield_estimation/<channel>/               # package products
+├── flatfield_estimation/<channel>/side_<side>/     # package products
 │   ├── flatfield_<channel>.npy / _level0.npy
 │   ├── darkfield_<channel>.npy / _level0.npy
 │   ├── flatfield_<channel>.json                  # parameters, search report, guard verdict, provenance
@@ -155,7 +155,7 @@ These are inputs of `run_capsule.py` (`python run_capsule.py --pyramid-level 3`)
 | Input | Default | Description |
 |-------|---------|-------------|
 | `--pyramid-level` | `2` | Zarr multiscale level used for the fit |
-| `--search-budget-minutes` | `480` | `--max-search-minutes` of each call (channel and laser side). The package skips the search if the projected cost is more than half of this. |
+| `--search-budget-minutes` | `120` | `--max-search-minutes` of each call (channel and laser side). The package skips the search if the projected cost is more than half of this. |
 | `--darkfield-relative-path` | `derivatives/DarkMaster_cropped.tif` | Microscope darkfield, relative to the data folder |
 
 `TILE_PATTERN` in `estimation.py` (`\.zarr$`) is only the default that selects every zarr when no side pattern is given.

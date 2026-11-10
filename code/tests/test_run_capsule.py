@@ -143,8 +143,8 @@ class TestRunEstimation(unittest.TestCase):
         self.assertEqual(
             folders,
             [
-                str(self.results / "flatfield_estimation" / "ch_a"),
-                str(self.results / "flatfield_estimation" / "ch_b"),
+                str(self.results / "flatfield_estimation" / "ch_a" / "side_0"),
+                str(self.results / "flatfield_estimation" / "ch_b" / "side_0"),
             ],
         )
         for argv in fake.calls:
@@ -339,6 +339,18 @@ class TestPerSide(TestRunEstimation):
         self.assertEqual(argv[argv.index("--max-search-minutes") + 1], "90")
         self.assertTrue(argv[argv.index("--darkfield-image") + 1].endswith("derivatives/Other.tif"))
 
+    def test_each_side_has_its_own_package_folder(self):
+        """Tests that the package run logs of the sides do not overwrite each other"""
+        self.use_two_sides()
+        self.add_channel("ch_a")
+        fake = FakePackage()
+
+        self.run_with(fake)
+
+        folders = {call[call.index("--output-folder") + 1] for call in fake.calls}
+        self.assertEqual(len(folders), 2)
+        self.assertTrue(all(Path(f).parent.name == "ch_a" for f in folders))
+
     def test_side_without_tiles_is_skipped(self):
         """Tests that an empty side does not call the package"""
         self.add_channel("ch_a")
@@ -409,7 +421,7 @@ class TestParseArgs(unittest.TestCase):
 
         self.assertEqual(args.darkfield_relative_path, "derivatives/DarkMaster_cropped.tif")
         self.assertEqual(args.pyramid_level, 2)
-        self.assertEqual(args.search_budget_minutes, 480.0)
+        self.assertEqual(args.search_budget_minutes, run_capsule.DEFAULT_SEARCH_BUDGET_MINUTES)
 
     def test_custom_values(self):
         """Tests that the inputs are parsed"""

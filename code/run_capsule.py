@@ -37,7 +37,7 @@ DEFAULT_PYRAMID_LEVEL = 2
 # side (calls run one after the other). The package skips the search
 # when its projected cost is more than half of this (240 min). The
 # search is mandatory here.
-DEFAULT_SEARCH_BUDGET_MINUTES = 480.0
+DEFAULT_SEARCH_BUDGET_MINUTES = 120.0
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:

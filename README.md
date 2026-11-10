@@ -6,7 +6,7 @@ Retrospective flatfield estimation for SmartSPIM light-sheet microscopy data. Wh
 
 The estimation itself is done by the [aind-flatfield-correction](https://github.com/AllenNeuralDynamics/aind-flatfield-correction) package (BaSiCPy based). This repository only does the SmartSPIM specific work: it reads the capsule inputs, calls the package for each channel, writes the flatfield files that the SmartSPIM destripe capsule reads, and writes the AIND processing metadata.
 
-A separate flatfield is computed for each channel (laser). One flatfield file is written per channel and is used for the tiles of both brain sides.
+A separate flatfield is computed for each channel (laser) and each laser side that has tiles. One flatfield file `estimated_flat_laser_<channel>_side_<side>.tif` is written per channel and side.
 
 ---
 
@@ -38,10 +38,9 @@ The capsule writes all its outputs first. Then it raises an error, so you can in
 
 | Error | Cause |
 |---|---|
-| `SuspiciousFlatfieldError` | The package plausibility check failed for at least one channel (flat is a no-op, has non-finite values, or is out of range). The reasons are in `processing.json` notes and in the package sidecar json. |
 | `SearchSkippedError` | The package did not run the parameter search (`over_budget` or `all_candidates_failed`). The search is mandatory. |
 
-Every channel runs before the error is raised.
+Every channel and side runs before the error is raised. A suspicious flatfield (the package plausibility check failed) does not raise. It is logged as a warning and written in the `processing.json` notes.
 
 ---
 
@@ -151,13 +150,15 @@ For local data, set `input_data` to an absolute directory path containing `<col>
 
 ## Key parameters
 
-These are constants in `estimation.py`:
+These are inputs of `run_capsule.py` (`python run_capsule.py --pyramid-level 3`). The `code/run` script forwards its arguments. They are passed to `estimation.build_estimate_argv`. The tiles of each laser side are selected with a pattern from `estimation.build_tile_pattern`.
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `PYRAMID_LEVEL` | `2` | Zarr multiscale level used for the fit |
-| `TILE_PATTERN` | `\.zarr$` | Entries in the channel folder that are tiles |
-| `SEARCH_BUDGET_MINUTES` | `480` | `--max-search-minutes`. The package skips the search if the projected cost is more than half of this. |
+| Input | Default | Description |
+|-------|---------|-------------|
+| `--pyramid-level` | `2` | Zarr multiscale level used for the fit |
+| `--search-budget-minutes` | `480` | `--max-search-minutes` of each call (channel and laser side). The package skips the search if the projected cost is more than half of this. |
+| `--darkfield-relative-path` | `derivatives/DarkMaster_cropped.tif` | Microscope darkfield, relative to the data folder |
+
+`TILE_PATTERN` in `estimation.py` (`\.zarr$`) is only the default that selects every zarr when no side pattern is given.
 
 The package defaults are used for everything else (joint fit, `ladmap` solver, 2000 planes in total across all tiles). See the package README for its options.
 
@@ -168,7 +169,7 @@ The package defaults are used for everything else (joint fit, `ladmap` solver, 2
 ### `estimation.py`
 
 ```python
-build_estimate_argv(channel_path, darkfield_path, output_folder, output_name, pyramid_level=2, validate=True)
+build_estimate_argv(channel_path, darkfield_path, output_folder, output_name, pyramid_level, max_search_minutes, validate=True, tile_pattern=TILE_PATTERN)
 ```
 Builds the package command-line arguments. `--validate` is on by default. `--skip-search` is never added.
 
@@ -183,9 +184,9 @@ read_estimation_report(sidecar_path)
 Reads the package sidecar and returns the plausibility verdict and the search verdict.
 
 ```python
-write_flat(flatfield_path, channel_name, results_folder)
+write_flat(flatfield_path, channel_name, side, results_folder)
 ```
-Writes `estimated_flat_laser_<channel>.tif` (float32), one file per channel.
+Writes `estimated_flat_laser_<channel>_side_<side>.tif` (float32) for one channel and laser side.
 
 ### `utils.py`
 

@@ -16,7 +16,9 @@ RUN conda create -y -n flatfield_estimation python=3.10 && \
         "aind-flatfield-correction @ git+https://github.com/AllenNeuralDynamics/aind-flatfield-correction.git@6bb59440217471d7f326db4997c06d5d841e85e1" \
         aind-data-schema==2.8.0 \
         "aind-data-schema-models>=5.7.1,<6" \
-        log-schema==0.2.10.dev1 && \
+        log-schema==0.2.10.dev1 \
+        psutil \
+        tifffile && \
     conda clean --all --yes
 
 # ----------- runtime Stage ----------- #

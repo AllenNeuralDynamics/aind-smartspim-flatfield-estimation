@@ -6,34 +6,25 @@ writes the files that the SmartSPIM destripe capsule expects.
 """
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 import tifffile as tif
 
-# Estimation settings that belong to SmartSPIM.
-PYRAMID_LEVEL = 2
+from aind_smartspim_flatfield_estimation._types import PathLike
+
+# Default selection of the tiles: every zarr in the channel folder.
 TILE_PATTERN = r"\.zarr$"
-# The package skips the parameter search when its projected cost is
-# more than half of this budget. The search is mandatory here.
-SEARCH_BUDGET_MINUTES = 480
+# Keys of the package sidecar that must exist. A renamed key must not
+# silently become "not suspicious".
+REQUIRED_SIDECAR_KEYS = ("suspicious", "guard", "params")
 
 
 class FlatfieldEstimationError(RuntimeError):
     """Base class for estimation problems found after a run."""
-
-
-class SuspiciousFlatfieldError(FlatfieldEstimationError):
-    """The package marked one or more flatfields as suspicious."""
-
-    def __init__(self, reasons_by_channel: Dict[str, List[str]]):
-        self.reasons_by_channel = reasons_by_channel
-        details = "; ".join(
-            f"{channel}: {', '.join(reasons)}" for channel, reasons in reasons_by_channel.items()
-        )
-        super().__init__(f"Suspicious flatfield. {details}")
 
 
 class SearchSkippedError(FlatfieldEstimationError):
@@ -76,13 +67,44 @@ class EstimationReport:
         return self.search_reason is not None
 
 
+def build_tile_pattern(tile_ids: Sequence[str]) -> str:
+    """
+    Builds the regex that selects the tiles of one laser side.
+
+    Tile folders are named <X>_<Y>.ome.zarr, and laser_tiles.json
+    lists the <X>_<Y> ids of each side.
+
+    Parameters
+    ----------
+    tile_ids: Sequence[str]
+        Tile ids of one side, for example "345020_229180".
+
+    Raises
+    ------
+    ValueError:
+        If there are no tile ids.
+
+    Returns
+    -------
+    str
+        Regex for the --tile-pattern argument of the package.
+    """
+    if not tile_ids:
+        raise ValueError("At least one tile id is needed to build a tile pattern.")
+
+    alternatives = "|".join(re.escape(tile_id) for tile_id in sorted(tile_ids))
+    return rf"^(?:{alternatives})\.ome\.zarr$"
+
+
 def build_estimate_argv(
     channel_path: str,
     darkfield_path: str,
     output_folder: str,
     output_name: str,
-    pyramid_level: int = PYRAMID_LEVEL,
+    pyramid_level: int,
+    max_search_minutes: float,
     validate: bool = True,
+    tile_pattern: str = TILE_PATTERN,
 ) -> List[str]:
     """
     Builds the command-line arguments for the package estimation.
@@ -102,8 +124,14 @@ def build_estimate_argv(
         Name of the package products, for example the channel name.
     pyramid_level: int
         Multiscale level used in the estimation.
+    max_search_minutes: float
+        Budget of the parameter search of one call. The package skips
+        the search when its projected cost is more than half of this.
     validate: bool
         True to write the validation figures. Default: True
+    tile_pattern: str
+        Regex that selects the tiles. Default: all the zarr tiles.
+        Use build_tile_pattern to select the tiles of one side.
 
     Returns
     -------
@@ -113,7 +141,7 @@ def build_estimate_argv(
     argv = [
         str(channel_path),
         "--tile-pattern",
-        TILE_PATTERN,
+        tile_pattern,
         "--output-name",
         output_name,
         "--output-folder",
@@ -125,7 +153,7 @@ def build_estimate_argv(
         "--method",
         "fit",
         "--max-search-minutes",
-        str(SEARCH_BUDGET_MINUTES),
+        str(max_search_minutes),
     ]
 
     if validate:
@@ -146,10 +174,18 @@ def run_estimate(argv: List[str]) -> None:
     # Imported here because the package loads jax, which is slow.
     from aind_flatfield_correction.core.basicpy.estimate import main
 
-    main(argv)
+    try:
+        main(argv)
+    except SystemExit as error:
+        # argparse exits with SystemExit, which is not an Exception and
+        # would skip the stage_failure log of the capsule.
+        if error.code not in (None, 0):
+            raise FlatfieldEstimationError(
+                f"The package exited with code {error.code!r} for arguments {argv}"
+            ) from error
 
 
-def read_estimation_report(sidecar_path: str) -> EstimationReport:
+def read_estimation_report(sidecar_path: PathLike) -> EstimationReport:
     """
     Reads the sidecar json that the package writes after an estimation.
 
@@ -162,6 +198,9 @@ def read_estimation_report(sidecar_path: str) -> EstimationReport:
     ------
     FileNotFoundError:
         If the sidecar does not exist. The package did not finish.
+    ValueError:
+        If the sidecar misses a required key. The package format
+        might have changed.
 
     Returns
     -------
@@ -176,32 +215,38 @@ def read_estimation_report(sidecar_path: str) -> EstimationReport:
     with open(sidecar_path) as sidecar_file:
         sidecar = json.load(sidecar_file)
 
+    missing = [key for key in REQUIRED_SIDECAR_KEYS if key not in sidecar]
+    if missing:
+        raise ValueError(f"The sidecar {sidecar_path} misses the keys {missing}.")
+
     return EstimationReport(
-        suspicious=bool(sidecar.get("suspicious")),
-        guard_reasons=list(sidecar.get("guard", {}).get("reasons", [])),
+        suspicious=bool(sidecar["suspicious"]),
+        guard_reasons=list((sidecar.get("guard") or {}).get("reasons", [])),
         search_reason=(sidecar.get("search") or {}).get("reason"),
-        params=sidecar.get("params", {}),
+        params=sidecar["params"] or {},
         sidecar=sidecar,
     )
 
 
 def write_flat(
-    flatfield_path: str,
+    flatfield_path: PathLike,
     channel_name: str,
-    results_folder: str,
+    side: str,
+    results_folder: PathLike,
 ) -> str:
     """
-    Writes the flatfield tif of one channel. The SmartSPIM destripe
-    capsule reads this file. One flatfield is used for all the tiles
-    of the channel.
+    Writes the flatfield tif of one laser side of one channel. The
+    flatfield is used for all the tiles acquired with that side.
 
     Parameters
     ----------
-    flatfield_path: str
+    flatfield_path: PathLike
         Path to the full-resolution flatfield (.npy) from the package.
     channel_name: str
         Channel name used in the file name.
-    results_folder: str
+    side: str
+        Laser side, as in laser_tiles.json.
+    results_folder: PathLike
         Folder where the tif file is written.
 
     Returns
@@ -210,7 +255,9 @@ def write_flat(
         Path of the written file.
     """
     flatfield = np.load(flatfield_path).astype(np.float32)
-    output_path = str(Path(results_folder).joinpath(f"estimated_flat_laser_{channel_name}.tif"))
+    output_path = str(
+        Path(results_folder).joinpath(f"estimated_flat_laser_{channel_name}_side_{side}.tif")
+    )
     tif.imwrite(output_path, flatfield)
 
     return output_path

@@ -49,7 +49,8 @@ class FakePackage:
         output_folder = Path(argv[argv.index("--output-folder") + 1])
         self.calls.append(argv)
 
-        if output_name == self.fail_on:
+        channel = output_name.rsplit("_side_", 1)[0]
+        if channel == self.fail_on:
             raise RuntimeError("solver failed")
 
         output_folder.mkdir(parents=True, exist_ok=True)
@@ -57,7 +58,7 @@ class FakePackage:
             output_folder.joinpath(f"flatfield_{output_name}_level0.npy"),
             np.full((6, 4), 1.0, dtype=np.float32),
         )
-        sidecar = self.sidecars.get(output_name, make_sidecar())
+        sidecar = self.sidecars.get(output_name) or self.sidecars.get(channel) or make_sidecar()
         output_folder.joinpath(f"flatfield_{output_name}.json").write_text(json.dumps(sidecar))
 
 
@@ -100,7 +101,7 @@ class TestRunEstimation(unittest.TestCase):
     def assert_outputs_written(self, channel):
         """Checks the files that the destripe capsule needs"""
         flats = list(self.results.glob(f"estimated_flat_laser_{channel}*.tif"))
-        self.assertEqual([p.name for p in flats], [f"estimated_flat_laser_{channel}.tif"])
+        self.assertEqual([p.name for p in flats], [f"estimated_flat_laser_{channel}_side_0.tif"])
         self.assertTrue(self.results.joinpath("laser_tiles.json").exists())
         self.assertTrue(self.results.joinpath("metadata", "processing.json").exists())
 
@@ -172,15 +173,14 @@ class TestRunEstimation(unittest.TestCase):
             with patch.object(estimation, "run_estimate", lambda argv: None):
                 run_capsule.run_estimation(self.data, self.results)
 
-    def test_suspicious_flatfield_writes_outputs_then_raises(self):
-        """Tests the write-then-fail policy for a suspicious flatfield"""
+    def test_suspicious_flatfield_is_logged_not_raised(self):
+        """Tests that a suspicious flatfield is flagged and the run continues"""
         self.add_channel("ch_a")
         fake = FakePackage({"ch_a": make_sidecar(suspicious=True, reasons=["std too low"])})
 
-        with self.assertRaises(estimation.SuspiciousFlatfieldError) as context:
+        with self.assertLogs(run_capsule.logger, level="WARNING"):
             self.run_with(fake)
 
-        self.assertEqual(context.exception.reasons_by_channel, {"ch_a": ["std too low"]})
         self.assert_outputs_written("ch_a")
         self.assertIn("std too low", self.data_processes()[0]["notes"])
 
@@ -190,10 +190,8 @@ class TestRunEstimation(unittest.TestCase):
         self.add_channel("ch_b")
         fake = FakePackage({"ch_a": make_sidecar(suspicious=True, reasons=["span too low"])})
 
-        with self.assertRaises(estimation.SuspiciousFlatfieldError) as context:
-            self.run_with(fake)
+        self.run_with(fake)
 
-        self.assertEqual(list(context.exception.reasons_by_channel), ["ch_a"])
         self.assertEqual(len(fake.calls), 2)
         self.assert_outputs_written("ch_a")
         self.assert_outputs_written("ch_b")
@@ -207,7 +205,7 @@ class TestRunEstimation(unittest.TestCase):
         with self.assertRaises(estimation.SearchSkippedError) as context:
             self.run_with(fake)
 
-        self.assertEqual(context.exception.reason_by_channel, {"ch_a": "over_budget"})
+        self.assertEqual(context.exception.reason_by_channel, {"ch_a_side_0": "over_budget"})
         self.assert_outputs_written("ch_a")
         self.assertIn("over_budget", self.data_processes()[0]["notes"])
 
@@ -227,8 +225,8 @@ class TestRunEstimation(unittest.TestCase):
 
         self.assert_outputs_written("ch_a")
 
-    def test_suspicious_flatfield_has_priority_over_skipped_search(self):
-        """Tests which error is raised when both problems happen"""
+    def test_suspicious_and_skipped_search_still_raises_for_the_search(self):
+        """Tests that only the skipped search fails the run"""
         self.add_channel("ch_a")
         fake = FakePackage(
             {
@@ -238,12 +236,129 @@ class TestRunEstimation(unittest.TestCase):
             }
         )
 
-        with self.assertRaises(estimation.SuspiciousFlatfieldError):
+        with self.assertRaises(estimation.SearchSkippedError):
             self.run_with(fake)
 
         note = self.data_processes()[0]["notes"]
         self.assertIn("std too low", note)
         self.assertIn("over_budget", note)
+
+    def test_processing_is_written_when_a_later_channel_fails(self):
+        """Tests that finished channels keep their provenance"""
+        self.add_channel("ch_a")
+        self.add_channel("ch_b")
+        fake = FakePackage()
+
+        def fail_second(argv):
+            # glob order is not guaranteed, so fail whichever runs second
+            if fake.calls:
+                raise RuntimeError("solver failed")
+            fake(argv)
+
+        with self.assertRaises(RuntimeError):
+            self.run_with(fail_second)
+
+        self.assertEqual(len(self.data_processes()), 1)
+
+
+class TestPerSide(TestRunEstimation):
+    """Tests for the one flatfield per laser side policy"""
+
+    def use_two_sides(self):
+        """Replaces the metadata with tiles in both sides"""
+        tiles = [
+            {"Side": "0", "X": "1", "Y": "2"},
+            {"Side": "0", "X": "3", "Y": "4"},
+            {"Side": "1", "X": "5", "Y": "6"},
+        ]
+        self.data.joinpath("metadata.json").write_text(json.dumps({"tile_config": tiles}))
+
+    def pattern_of(self, argv):
+        """Gets the tile pattern of a package call"""
+        return argv[argv.index("--tile-pattern") + 1]
+
+    def test_both_sides_get_their_own_flat_and_tiles(self):
+        """Tests one package call and one tif per side, with disjoint tiles"""
+        self.use_two_sides()
+        self.add_channel("ch_a")
+        fake = FakePackage()
+
+        self.run_with(fake)
+
+        self.assertEqual(len(fake.calls), 2)
+        names = sorted(p.name for p in self.results.glob("estimated_flat_laser_*.tif"))
+        self.assertEqual(
+            names,
+            ["estimated_flat_laser_ch_a_side_0.tif", "estimated_flat_laser_ch_a_side_1.tif"],
+        )
+        patterns = {self.pattern_of(call) for call in fake.calls}
+        self.assertEqual(len(patterns), 2)
+        side_0 = next(p for p in patterns if "1_2" in p)
+        side_1 = next(p for p in patterns if "5_6" in p)
+        self.assertIn("3_4", side_0)
+        self.assertNotIn("5_6", side_0)
+        self.assertNotIn("1_2", side_1)
+        self.assertEqual(len(self.data_processes()), 2)
+
+    def test_defaults_reach_the_package(self):
+        """Tests that the default inputs are the ones passed to the package"""
+        self.add_channel("ch_a")
+        fake = FakePackage()
+
+        self.run_with(fake)
+
+        argv = fake.calls[0]
+        self.assertEqual(
+            argv[argv.index("--pyramid-level") + 1], str(run_capsule.DEFAULT_PYRAMID_LEVEL)
+        )
+        self.assertEqual(
+            argv[argv.index("--max-search-minutes") + 1],
+            str(run_capsule.DEFAULT_SEARCH_BUDGET_MINUTES),
+        )
+
+    def test_custom_inputs_reach_the_package(self):
+        """Tests pyramid level, search budget and darkfield path as inputs"""
+        self.add_channel("ch_a")
+        self.data.joinpath("derivatives", "Other.tif").write_bytes(
+            self.data.joinpath("derivatives", "DarkMaster_cropped.tif").read_bytes()
+        )
+        self.data.joinpath("derivatives", "DarkMaster_cropped.tif").unlink()
+        fake = FakePackage()
+
+        with patch.object(estimation, "run_estimate", fake):
+            run_capsule.run_estimation(
+                self.data,
+                self.results,
+                darkfield_relative_path="derivatives/Other.tif",
+                pyramid_level=1,
+                search_budget_minutes=90,
+            )
+
+        argv = fake.calls[0]
+        self.assertEqual(argv[argv.index("--pyramid-level") + 1], "1")
+        self.assertEqual(argv[argv.index("--max-search-minutes") + 1], "90")
+        self.assertTrue(argv[argv.index("--darkfield-image") + 1].endswith("derivatives/Other.tif"))
+
+    def test_side_without_tiles_is_skipped(self):
+        """Tests that an empty side does not call the package"""
+        self.add_channel("ch_a")
+        fake = FakePackage()
+
+        self.run_with(fake)
+
+        self.assertEqual(len(fake.calls), 1)
+        self.assertFalse(self.results.joinpath("estimated_flat_laser_ch_a_side_1.tif").exists())
+
+    def test_two_channels_two_sides_call_the_package_four_times(self):
+        """Tests the channel by side loop"""
+        self.use_two_sides()
+        self.add_channel("ch_a")
+        self.add_channel("ch_b")
+        fake = FakePackage()
+
+        self.run_with(fake)
+
+        self.assertEqual(len(fake.calls), 4)
 
 
 class TestGetChannel(unittest.TestCase):
@@ -270,6 +385,57 @@ class TestGetChannel(unittest.TestCase):
         self.assertEqual(channel_path, "/data/Ex_488_Em_525")
 
 
+class TestGetChannelValidation(unittest.TestCase):
+    """Tests for incomplete channel configuration files"""
+
+    def test_json_without_channel_raises(self):
+        """Tests that a json without keys does not become the path None/None"""
+        folder = Path(tempfile.mkdtemp(prefix="unittest_"))
+        config = folder.joinpath("preprocess_x.json")
+        config.write_text(json.dumps({"input_data": "s3://bucket/data"}))
+
+        with self.assertRaises(ValueError):
+            run_capsule.get_channel(config)
+
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+class TestParseArgs(unittest.TestCase):
+    """Tests for the capsule inputs"""
+
+    def test_defaults(self):
+        """Tests the values without arguments"""
+        args = run_capsule.parse_args([])
+
+        self.assertEqual(args.darkfield_relative_path, "derivatives/DarkMaster_cropped.tif")
+        self.assertEqual(args.pyramid_level, 2)
+        self.assertEqual(args.search_budget_minutes, 480.0)
+
+    def test_custom_values(self):
+        """Tests that the inputs are parsed"""
+        args = run_capsule.parse_args(
+            [
+                "--darkfield-relative-path",
+                "derivatives/Dark.tif",
+                "--pyramid-level",
+                "3",
+                "--search-budget-minutes",
+                "60",
+            ]
+        )
+
+        self.assertEqual(args.darkfield_relative_path, "derivatives/Dark.tif")
+        self.assertEqual(args.pyramid_level, 3)
+        self.assertEqual(args.search_budget_minutes, 60.0)
+
+    def test_invalid_values_exit(self):
+        """Tests that invalid inputs are rejected before any work"""
+        for bad in (["--pyramid-level", "-1"], ["--search-budget-minutes", "0"]):
+            with self.subTest(bad=bad):
+                with patch("sys.stderr"), self.assertRaises(SystemExit):
+                    run_capsule.parse_args(bad)
+
+
 class TestMain(unittest.TestCase):
     """Tests for the logging of the stages"""
 
@@ -278,7 +444,7 @@ class TestMain(unittest.TestCase):
         with patch.object(run_capsule, "run_estimation", side_effect=RuntimeError("boom")):
             with patch.object(run_capsule.logger, "error") as mock_error:
                 with self.assertRaises(RuntimeError):
-                    run_capsule.main()
+                    run_capsule.main([])
 
         self.assertEqual(mock_error.call_args.kwargs["extra"]["event_type"], "stage_failure")
 
@@ -286,7 +452,7 @@ class TestMain(unittest.TestCase):
         """Tests that a clean run logs stage_complete"""
         with patch.object(run_capsule, "run_estimation"):
             with patch.object(run_capsule.logger, "info") as mock_info:
-                run_capsule.main()
+                run_capsule.main([])
 
         events = [
             call.kwargs.get("extra", {}).get("event_type") for call in mock_info.call_args_list

@@ -1,6 +1,7 @@
 """Tests for the layer between the capsule and aind-flatfield-correction"""
 
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -32,7 +33,7 @@ class TestBuildEstimateArgv(unittest.TestCase):
             darkfield_path="/data/derivatives/DarkMaster_cropped.tif",
             output_folder="/results/flatfield_estimation/Ex_488_Em_525",
             output_name="Ex_488_Em_525",
-            **kwargs,
+            **{"pyramid_level": 2, "max_search_minutes": 480, **kwargs},
         )
 
     def value_of(self, argv, flag):
@@ -61,11 +62,14 @@ class TestBuildEstimateArgv(unittest.TestCase):
         self.assertEqual(self.value_of(argv, "--output-name"), "Ex_488_Em_525")
         self.assertEqual(self.value_of(argv, "--method"), "fit")
 
-    def test_search_budget(self):
-        """Tests the search has a large time budget"""
-        argv = self.build()
+    def test_pyramid_level_and_budget_come_from_the_caller(self):
+        """Tests that the settings are arguments, not constants of the module"""
+        argv = self.build(pyramid_level=3, max_search_minutes=120)
 
-        self.assertEqual(self.value_of(argv, "--max-search-minutes"), "480")
+        self.assertEqual(self.value_of(argv, "--pyramid-level"), "3")
+        self.assertEqual(self.value_of(argv, "--max-search-minutes"), "120")
+        self.assertFalse(hasattr(estimation, "PYRAMID_LEVEL"))
+        self.assertFalse(hasattr(estimation, "SEARCH_BUDGET_MINUTES"))
 
     def test_search_cannot_be_skipped(self):
         """Tests that the arguments never skip the parameter search"""
@@ -88,6 +92,30 @@ class TestRunEstimate(unittest.TestCase):
             estimation.run_estimate(["a", "b"])
 
         fake_module.main.assert_called_once_with(["a", "b"])
+
+
+class TestRunEstimateExit(unittest.TestCase):
+    """Tests for SystemExit raised by the package"""
+
+    def run_with_exit(self, code):
+        """Runs run_estimate with a package that exits with the code"""
+        fake_module = MagicMock()
+        fake_module.main.side_effect = SystemExit(code)
+        with patch.dict(
+            "sys.modules",
+            {"aind_flatfield_correction.core.basicpy.estimate": fake_module},
+        ):
+            estimation.run_estimate(["a"])
+
+    def test_bad_arguments_become_an_exception(self):
+        """Tests that argparse exits are catchable as Exception"""
+        with self.assertRaises(estimation.FlatfieldEstimationError):
+            self.run_with_exit(2)
+
+    def test_clean_exit_is_not_an_error(self):
+        """Tests that exit code 0 or None is accepted"""
+        self.run_with_exit(0)
+        self.run_with_exit(None)
 
 
 class TestReadEstimationReport(unittest.TestCase):
@@ -180,36 +208,44 @@ class TestWriteSideFlats(unittest.TestCase):
         """Removes the temporary folder"""
         shutil.rmtree(self.folder, ignore_errors=True)
 
-    def test_one_file_with_the_name_destripe_searches(self):
-        """Tests the file name that the destripe capsule searches"""
-        path = estimation.write_flat(self.flatfield_path, "Ex_488_Em_525", self.folder)
+    def test_file_name_has_channel_and_side(self):
+        """Tests the file name of one side"""
+        path = estimation.write_flat(self.flatfield_path, "Ex_488_Em_525", "1", self.folder)
 
-        self.assertEqual(Path(path).name, "estimated_flat_laser_Ex_488_Em_525.tif")
+        self.assertEqual(Path(path).name, "estimated_flat_laser_Ex_488_Em_525_side_1.tif")
         self.assertTrue(Path(path).exists())
-        self.assertEqual(
-            [p.name for p in self.folder.glob("estimated_flat_laser_Ex_488_Em_525*.tif")],
-            ["estimated_flat_laser_Ex_488_Em_525.tif"],
-        )
 
     def test_file_is_float32_with_the_same_values(self):
         """Tests the dtype, shape and values of the written flatfield"""
-        written = tif.imread(estimation.write_flat(self.flatfield_path, "ch", self.folder))
+        written = tif.imread(estimation.write_flat(self.flatfield_path, "ch", "0", self.folder))
 
         self.assertEqual(written.dtype, np.float32)
         self.assertEqual(written.shape, self.flatfield.shape)
         np.testing.assert_allclose(written, self.flatfield, rtol=1e-6)
 
 
+class TestBuildTilePattern(unittest.TestCase):
+    """Tests for the tile selection regex"""
+
+    def test_matches_only_the_given_tiles(self):
+        """Tests the pattern against real tile folder names"""
+        pattern = re.compile(estimation.build_tile_pattern(["345020_229180", "409820_177340"]))
+
+        self.assertTrue(pattern.search("345020_229180.ome.zarr"))
+        self.assertTrue(pattern.search("409820_177340.ome.zarr"))
+        self.assertFalse(pattern.search("345020_151420.ome.zarr"))
+        # No partial matches of an id inside a longer name
+        self.assertFalse(pattern.search("1345020_229180.ome.zarr"))
+        self.assertFalse(pattern.search("345020_2291800.ome.zarr"))
+
+    def test_no_tiles_raises(self):
+        """Tests that an empty side cannot build a pattern"""
+        with self.assertRaises(ValueError):
+            estimation.build_tile_pattern([])
+
+
 class TestErrors(unittest.TestCase):
     """Tests for the error messages"""
-
-    def test_suspicious_error_names_channel_and_reason(self):
-        """Tests the error message has the channel and the reasons"""
-        error = estimation.SuspiciousFlatfieldError({"ch_a": ["std too low", "span too low"]})
-
-        self.assertIn("ch_a", str(error))
-        self.assertIn("std too low", str(error))
-        self.assertIsInstance(error, estimation.FlatfieldEstimationError)
 
     def test_search_skipped_error_names_channel_and_reason(self):
         """Tests the error message has the channel and the reason"""
@@ -222,3 +258,37 @@ class TestErrors(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStrictSidecar(unittest.TestCase):
+    """Tests for the validation of the sidecar"""
+
+    def setUp(self):
+        """Creates a temporary folder"""
+        self.folder = Path(tempfile.mkdtemp(prefix="unittest_"))
+        self.path = self.folder.joinpath("flatfield_ch.json")
+
+    def tearDown(self):
+        """Removes the temporary folder"""
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    def test_renamed_suspicious_key_raises(self):
+        """Tests that a missing key is not read as not suspicious"""
+        sidecar = make_sidecar()
+        sidecar["flagged"] = sidecar.pop("suspicious")
+        self.path.write_text(json.dumps(sidecar))
+
+        with self.assertRaises(ValueError) as context:
+            estimation.read_estimation_report(self.path)
+
+        self.assertIn("suspicious", str(context.exception))
+
+    def test_null_guard_is_accepted(self):
+        """Tests a sidecar with guard set to null"""
+        sidecar = make_sidecar()
+        sidecar["guard"] = None
+        self.path.write_text(json.dumps(sidecar))
+
+        report = estimation.read_estimation_report(self.path)
+
+        self.assertEqual(report.guard_reasons, [])

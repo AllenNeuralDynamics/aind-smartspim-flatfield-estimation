@@ -9,52 +9,17 @@ import platform
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
-from urllib.parse import urlparse
+from typing import List, Optional
 
-import boto3
-import dask.array as da
-import numpy as np
 import psutil
 from aind_data_schema.components.identifiers import Code
-from aind_data_schema.core.processing import (DataProcess, Processing,
-                                              ResourceTimestamped,
-                                              ResourceUsage)
+from aind_data_schema.core.processing import (
+    DataProcess,
+    Processing,
+    ResourceTimestamped,
+    ResourceUsage,
+)
 from aind_data_schema_models.units import MemoryUnit
-from natsort import natsorted
-
-
-def get_code_ocean_cpu_limit():
-    """
-    Gets the Code Ocean capsule CPU limit
-
-    Returns
-    -------
-    int:
-        number of cores available for compute
-    """
-    # Checks for environmental variables
-    co_cpus = os.environ.get("CO_CPUS")
-    aws_batch_job_id = os.environ.get("AWS_BATCH_JOB_ID")
-
-    if co_cpus:
-        return int(co_cpus)
-    if aws_batch_job_id:
-        return 1
-
-    try:
-        with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us") as fp:
-            cfs_quota_us = int(fp.read())
-        with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us") as fp:
-            cfs_period_us = int(fp.read())
-
-        container_cpus = cfs_quota_us // cfs_period_us
-
-    except FileNotFoundError:
-        container_cpus = 0
-
-    # For physical machine, the `cfs_quota_us` could be '-1'
-    return psutil.cpu_count(logical=False) if container_cpus < 1 else container_cpus
 
 
 def read_json_as_dict(filepath: str) -> dict:
@@ -86,54 +51,6 @@ def read_json_as_dict(filepath: str) -> dict:
                 dictionary = json.loads(data_str)
 
     return dictionary
-
-
-def pick_slices(
-    image_stack: np.array, percentage: float, read_lazy: Optional[bool] = True
-):
-    """
-    Pick slices from a 3D image stack based on a given percentage.
-
-    Parameters
-    ----------
-    image_stack: np.array
-        3D numpy array representing the image stack (Z, Y, X).
-
-    percentage: float
-        Percentage of the Z stack to pick (between 0 and 1).
-
-    read_lazy: Optional[bool]
-        Boolean to indicate if we want to read the data as
-        a lazy array or pull it into memory
-
-    Returns
-    -------
-    List:
-        List of slices picked from the image stack.
-    List:
-        List of the indices of the slices
-    """
-    z_dim = image_stack.shape[-3]
-    num_slices_to_pick = int(np.floor(percentage * z_dim))
-
-    if num_slices_to_pick == 0:
-        raise ValueError("Percentage too low to pick any slices.")
-
-    step_size = z_dim // num_slices_to_pick
-
-    start_slice = int(z_dim * 0.2)
-    end_slice = z_dim - start_slice + 1
-    slices = list(range(start_slice, end_slice, step_size))
-
-    if read_lazy:
-        picked_slices = da.stack([image_stack[i] for i in slices])
-    else:
-        if hasattr(image_stack, "compute"):
-            picked_slices = np.stack([image_stack[i].compute() for i in slices])
-        else:
-            picked_slices = np.stack([np.asarray(image_stack[i]) for i in slices])
-
-    return picked_slices, slices
 
 
 def get_col_rows_per_laser(metadata_json_path: str):
@@ -201,147 +118,6 @@ def get_col_rows_per_laser(metadata_json_path: str):
     return laser_side
 
 
-def get_brain_slices(
-    dataset_path: str,
-    cols: List[int],
-    rows: List[int],
-    slide_idx: int,
-    scale: Optional[int] = 0,
-):
-    """
-    Gets the brain slices that will be used in the estimation of
-    the flatfields.
-
-    Parameters
-    ----------
-    dataset_path: str
-        Dataset path where the tiles are located.
-
-    cols: List[str]
-        List of columns in the dataset
-
-    rows: List[str]
-        List of rows in the dataset
-
-    slide_idx: int
-        Index of the slice of the brain that is
-        being used for the flat estimation.
-
-    scale: Optional[int]
-        Multiscale that will be used in the flat
-        estimation. Default: 0
-
-    Returns
-    -------
-    np.array
-        Array with the slices
-
-    List[str]
-        List with the names of the tiles.
-        A combination of row and cols.
-    """
-    imgs = []
-    names = []
-
-    for col in cols:
-        for row in rows:
-            zarr_path = f"{dataset_path}/{col}_{row}.zarr/{scale}"
-            lazy_tile = da.squeeze(da.from_zarr(zarr_path))[slide_idx, ...]
-            imgs.append(lazy_tile.compute())
-            names.append(f"{col}_{row}.zarr")
-
-    return np.array(imgs), names
-
-
-def get_slicer_per_side(
-    tiles_per_laser: Dict,
-    channel_path: str,
-    indices: List[int],
-    scale: Optional[int] = 2,
-):
-    """
-    Groups 3D image slices per laser side based on tiles and metadata.
-
-    1. Reads the directory of Zarr datasets and extracts unique column and row identifiers.
-    2. Sorts the columns and rows using natural sorting.
-    3. Iterates over the specified slide indices to generate slices and names using the `get_brain_slices` function.
-    4. Matches the slices to their respective laser sides ("0" or "1") based on tile identifiers.
-    5. Converts the collected slices for each laser side into NumPy arrays and returns them.
-
-    Parameters
-    ----------
-    tiles_per_laser: dict:
-        A dictionary where keys are laser sides ("0", "1")
-        and values are lists of tile identifiers (e.g., "X_Y").
-    channel_path: str
-        Path to the directory containing Zarr datasets.
-    indices: List[int]:
-        List of slide indices to process.
-    scale: int
-        Scale factor to use for processing slices.
-        Default: 2
-
-    Returns
-    -------
-    dict
-        A dictionary with keys "0" and "1", where each key maps to
-        a 3D NumPy array containing the processed image slices for
-        the corresponding laser side.
-
-    Raises
-    ------
-    ValueError:
-        If a stack (tile) in the channel data is not found in the metadata.
-
-    """
-
-    channel_path = Path(channel_path)
-    data_per_laser = {k: [] for k in tiles_per_laser.keys()}
-    laser_sets = {side: set(tiles) for side, tiles in tiles_per_laser.items()}
-    cols = set()
-    rows = set()
-
-    for folder in channel_path.glob("*.zarr"):
-        if folder.suffix == ".zarr":
-            col, row = str(folder.stem).split("_")
-            cols.add(col)
-            rows.add(row)
-
-    cols = natsorted(cols)
-    rows = natsorted(rows)
-
-    for indice in indices:
-        params = {
-            "dataset_path": channel_path,
-            "cols": cols,
-            "rows": rows,
-            "slide_idx": indice,
-            "scale": scale,
-        }
-
-        curr_slcs, curr_nms = get_brain_slices(**params)
-
-        for nm_idx in range(len(curr_nms)):
-            curr_nm = curr_nms[nm_idx]
-            curr_slc = curr_slcs[nm_idx]
-
-            curr_nm = curr_nm.replace(".zarr", "")
-
-            if curr_nm in laser_sets["0"]:
-                data_per_laser["0"].append(curr_slc)
-
-            elif curr_nm in laser_sets["1"]:
-                data_per_laser["1"].append(curr_slc)
-
-            else:
-                raise ValueError(f"Stack {curr_nm} not in the metadata")
-
-    for side, arr in data_per_laser.items():
-        data_per_laser[side] = np.array(data_per_laser[side])
-
-    return data_per_laser
-
-
 def create_folder(dest_dir, verbose: Optional[bool] = False) -> None:
     """
     Create new folders.
@@ -402,14 +178,10 @@ class ResourceMonitor:
         while not self._stop_event.is_set():
             now = datetime.now(timezone.utc)
             self._cpu_usage.append(
-                ResourceTimestamped(
-                    timestamp=now, usage=psutil.cpu_percent(interval=None)
-                )
+                ResourceTimestamped(timestamp=now, usage=psutil.cpu_percent(interval=None))
             )
             self._ram_usage.append(
-                ResourceTimestamped(
-                    timestamp=now, usage=psutil.virtual_memory().percent
-                )
+                ResourceTimestamped(timestamp=now, usage=psutil.virtual_memory().percent)
             )
             self._stop_event.wait(self._interval)
 
@@ -508,108 +280,3 @@ def generate_processing(
     )
 
     processing.write_standard_file(output_directory=dest_processing)
-
-
-def list_s3_folders(bucket: str, prefix: str, extension: Optional[str] = None) -> list:
-    """
-    List top-level 'folders' under a given S3 prefix that end with a given extension.
-
-    Parameters
-    ----------
-        bucket: str
-            Name of the S3 bucket.
-        prefix: str
-            S3 prefix path (e.g., "my/path/"), must end with "/".
-        extension: str
-            Extension to match folder names against (e.g., ".tif", ".zip").
-
-    Returns
-    -------
-        list: A list of matching folder prefixes (strings ending with "/").
-    """
-    if not prefix.endswith("/"):
-        prefix += "/"
-
-    s3 = boto3.client("s3")
-    paginator = s3.get_paginator("list_objects_v2")
-
-    folders = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix, Delimiter="/"):
-        for cp in page.get("CommonPrefixes", []):
-            folder_name = Path(cp["Prefix"].rstrip("/")).name
-            if extension is None or folder_name.endswith(extension):
-                folders.append(folder_name)
-
-    return folders
-
-
-def list_s3_files(bucket: str, prefix: str, extension: str) -> list:
-    """
-    List files under a given S3 prefix that end with a given extension.
-
-    Parameters
-    ----------
-    bucket: str
-        Name of the S3 bucket.
-    prefix: str
-        S3 prefix path (e.g., "my/path/"), must end with "/".
-    extension: str
-        Extension to match file names against (e.g., ".tif", ".zip").
-
-    Returns
-    -------
-    list: A list of matching file keys.
-    """
-    if not prefix.endswith("/"):
-        prefix += "/"
-
-    s3 = boto3.client("s3")
-    paginator = s3.get_paginator("list_objects_v2")
-
-    files = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix, Delimiter="/"):
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-            if key.endswith(extension):
-                files.append(key)
-
-    return files
-
-
-def is_s3_path(path: str) -> bool:
-    """
-    Checks if a path is an s3 path
-
-    Parameters
-    ----------
-    path: str
-        Provided path
-
-    Returns
-    -------
-    bool
-        True if it is a S3 path,
-        False if not.
-    """
-    parsed = urlparse(str(path))
-    return parsed.scheme == "s3"
-
-
-def split_s3_path(s3_path: str):
-    """
-    Split an S3 URI into bucket and prefix.
-
-    Parameters
-    ----------
-    s3_path : str
-        Example: "s3://my-bucket/folder1/folder2/"
-
-    Returns
-    -------
-    (bucket, prefix) : tuple[str, str]
-    """
-    parsed = urlparse(s3_path)
-    bucket = parsed.netloc
-    # remove leading slash
-    prefix = parsed.path.lstrip("/")
-    return bucket, prefix

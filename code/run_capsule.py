@@ -40,6 +40,11 @@ DEFAULT_PYRAMID_LEVEL = 2
 DEFAULT_SEARCH_BUDGET_MINUTES = 120.0
 
 
+# Seconds between CPU/RAM samples stored in processing.json for this step.
+# Keep large: every sample adds 360 B to the file (target < 100 KB total).
+RESOURCE_MONITOR_INTERVAL_SECONDS = 300.0
+
+
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     """
     Parses the inputs of the capsule.
@@ -227,7 +232,7 @@ def estimate_channel_side(
     )
 
     start_time = datetime.now(timezone.utc)
-    resource_monitor = utils.ResourceMonitor(interval_seconds=2.0).start()
+    resource_monitor = utils.ResourceMonitor(interval_seconds=RESOURCE_MONITOR_INTERVAL_SECONDS).start()
 
     try:
         estimation.run_estimate(

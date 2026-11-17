@@ -232,7 +232,9 @@ def estimate_channel_side(
     )
 
     start_time = datetime.now(timezone.utc)
-    resource_monitor = utils.ResourceMonitor(interval_seconds=RESOURCE_MONITOR_INTERVAL_SECONDS).start()
+    resource_monitor = utils.ResourceMonitor(
+        interval_seconds=RESOURCE_MONITOR_INTERVAL_SECONDS
+    ).start()
 
     try:
         estimation.run_estimate(

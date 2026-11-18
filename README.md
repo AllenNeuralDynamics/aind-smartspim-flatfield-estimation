@@ -23,11 +23,11 @@ derivatives/DarkMaster_cropped.tif ┤
         - plausibility check, validation figures
                                    │
                                    ▼
-        flatfield_<channel>_level0.npy + flatfield_<channel>.json
+        flatfield_<channel>_side_<side>_level0.npy + flatfield_<channel>_side_<side>.json
                                    │
                   ┌────────────────┴────────────────┐
                   ▼                                 ▼
-   estimated_flat_laser_<channel>.tif            metadata/processing.json
+   estimated_flat_laser_<channel>_side_<side>.tif  metadata/processing.json
 ```
 
 The flatfield is estimated on the raw (not destriped) tiles. The destripe capsule applies it after destriping.
@@ -117,14 +117,15 @@ Results are written to `/results/`:
 
 ```
 results/
-├── estimated_flat_laser_<channel>.tif            # read by the destripe capsule
+├── estimated_flat_laser_<channel>_side_<side>.tif  # read by the destripe capsule
 ├── laser_tiles.json                              # tile-to-side mapping
 ├── flatfield_estimation/<channel>/side_<side>/     # package products
-│   ├── flatfield_<channel>.npy / _level0.npy
-│   ├── darkfield_<channel>.npy / _level0.npy
-│   ├── flatfield_<channel>.json                  # parameters, search report, guard verdict, provenance
-│   ├── metadata/estimation.log
-│   └── <channel>/*.png                           # validation figures (always written)
+│   ├── flatfield_<channel>_side_<side>.npy / _level0.npy
+│   ├── darkfield_<channel>_side_<side>.npy / _level0.npy
+│   ├── flatfield_<channel>_side_<side>.json       # parameters, search report, guard verdict, provenance
+│   ├── metadata/estimation.log                   # package run log
+│   ├── metadata/tiles_<channel>_side_<side>.json # per-tile manifest of the fit
+│   └── <channel>_side_<side>/*.png               # validation figures (always written)
 └── metadata/
     └── processing.json                           # AIND provenance record
 ```
